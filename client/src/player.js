@@ -120,14 +120,23 @@ export class LocalPlayer {
     this.avatar.group.rotation.z = 0;
   }
 
-  // Records the server's authoritative position (used after server-side
-  // collision resolution nudges this player apart from another). Doesn't
-  // move anything itself — update() eases toward it gradually, once per
-  // render frame, instead of snapping instantly on each network packet
-  // (which read as a visible jerk ~30x/sec).
-  applyServerCorrection(x, z) {
-    const dist = Math.hypot(x - this.position.x, z - this.position.z);
-    this.serverTarget = dist > 0.55 ? { x, z } : null;
+  // Records a genuine server-side adjustment (e.g. collision push-apart),
+  // as distinct from ordinary network latency. `sentX/sentZ` is the
+  // transform we last told the server; comparing the server's echoed
+  // x/z against THAT (rather than against our current live position)
+  // isolates what the server actually changed, since both values sit on
+  // the same timeline — the raw echo is always "live position minus one
+  // network round-trip," which would otherwise look like a huge false
+  // correction under any real-world latency. Doesn't move anything itself
+  // — update() eases toward it gradually, once per render frame, instead
+  // of snapping instantly on each network packet.
+  applyServerCorrection(x, z, sentX, sentZ) {
+    const dx = x - sentX;
+    const dz = z - sentZ;
+    const dist = Math.hypot(dx, dz);
+    this.serverTarget = dist > 0.05
+      ? { x: this.position.x + dx, z: this.position.z + dz }
+      : null;
   }
 
   _easeTowardServerTarget(dt) {

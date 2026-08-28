@@ -30,6 +30,12 @@ let cameraPitch = 0.25;
 
 let restartCountdownTimer = null;
 
+// Last transform we told the server about — used to isolate genuine
+// server-side corrections (collision push-apart) from ordinary network
+// latency when the state broadcast echoes our own position back to us.
+let lastSentX = 0;
+let lastSentZ = 0;
+
 function showBanner(text, sub = '') {
   banner.textContent = '';
   const line = document.createElement('div');
@@ -93,6 +99,8 @@ function startGame(name) {
       localPlayer = new LocalPlayer(name, self.color, sceneManager.scene);
       localPlayer.setArenaRadius(data.map.radius);
       localPlayer.respawn(self.x, self.z, self.rotY);
+      lastSentX = self.x;
+      lastSentZ = self.z;
       cameraYaw = self.rotY;
 
       remotePlayers.removeAll();
@@ -111,7 +119,7 @@ function startGame(name) {
 
       const self = players.find(p => p.id === selfId);
       if (self && localPlayer) {
-        localPlayer.applyServerCorrection(self.x, self.z);
+        localPlayer.applyServerCorrection(self.x, self.z, lastSentX, lastSentZ);
       }
     },
     onShoveAction: (playerId) => {
@@ -147,6 +155,8 @@ function startGame(name) {
       if (self && localPlayer) {
         localPlayer.setArenaRadius(data.map.radius);
         localPlayer.respawn(self.x, self.z, self.rotY);
+        lastSentX = self.x;
+        lastSentZ = self.z;
       }
       cameraYaw = self ? self.rotY : cameraYaw;
       remotePlayers.respawnAll(data.players, selfId);
@@ -235,6 +245,8 @@ function loop(now) {
         z: localPlayer.position.z,
         rotY: localPlayer.rotY
       });
+      lastSentX = localPlayer.position.x;
+      lastSentZ = localPlayer.position.z;
     }
   }
 
