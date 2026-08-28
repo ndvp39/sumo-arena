@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sumo Arena</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05050a;
+      font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
+      color: #fff;
+    }
+    #app { position: relative; width: 100vw; height: 100vh; }
+    canvas { display: block; }
+
+    #hud {
+      position: absolute;
+      top: 12px; left: 12px;
+      background: rgba(0,0,0,0.45);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      pointer-events: none;
+      line-height: 1.5;
+    }
+    #controlsHint {
+      position: absolute;
+      top: 12px; right: 12px;
+      background: rgba(0,0,0,0.45);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      pointer-events: none;
+      line-height: 1.6;
+      text-align: right;
+    }
+    #banner {
+      position: absolute;
+      top: 40%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.65);
+      padding: 20px 36px;
+      border-radius: 12px;
+      font-size: 26px;
+      text-align: center;
+      display: none;
+      pointer-events: none;
+    }
+    #banner .sub { font-size: 15px; opacity: 0.8; margin-top: 6px; }
+
+    #mouseLookHint {
+      position: absolute;
+      bottom: 22px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.55);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    #loginOverlay {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, #1a1a2e, #05050a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 10;
+    }
+    #loginOverlay h1 { font-size: 42px; margin-bottom: 4px; letter-spacing: 2px; }
+    #loginOverlay p { opacity: 0.7; margin-top: 0; margin-bottom: 24px; }
+    #nameInput {
+      font-size: 18px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: none;
+      outline: none;
+      width: 260px;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+    #playBtn {
+      font-size: 18px;
+      padding: 10px 30px;
+      border-radius: 8px;
+      border: none;
+      background: #e74c3c;
+      color: #fff;
+      cursor: pointer;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    #playBtn:hover { background: #ff6b52; }
+    #loginHint { margin-top: 18px; font-size: 13px; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="loginOverlay">
+      <h1>SUMO ARENA</h1>
+      <p>Push everyone out. Last one standing wins.</p>
+      <input id="nameInput" type="text" maxlength="16" placeholder="Your name" />
+      <button id="playBtn">PLAY</button>
+      <div id="loginHint">WASD move &middot; SPACE jump &middot; F shove</div>
+    </div>
+
+    <div id="hud" style="display:none;">
+      <div id="mapName">Map: —</div>
+      <div id="aliveCount">Players alive: —</div>
+    </div>
+    <div id="controlsHint" style="display:none;">
+      W A S D — move<br/>
+      SPACE — jump<br/>
+      F — shove<br/>
+      MOUSE — look
+    </div>
+    <div id="banner"></div>
+    <div id="mouseLookHint" style="display:none;">Click the arena to enable mouse look</div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
