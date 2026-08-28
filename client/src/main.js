@@ -31,7 +31,16 @@ let cameraPitch = 0.25;
 let restartCountdownTimer = null;
 
 function showBanner(text, sub = '') {
-  banner.innerHTML = `<div>${text}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
+  banner.textContent = '';
+  const line = document.createElement('div');
+  line.textContent = text;
+  banner.appendChild(line);
+  if (sub) {
+    const subLine = document.createElement('div');
+    subLine.className = 'sub';
+    subLine.textContent = sub;
+    banner.appendChild(subLine);
+  }
   banner.style.display = 'block';
 }
 function hideBanner() {
