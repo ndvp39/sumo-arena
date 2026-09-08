@@ -2,25 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#05050a">
   <title>Sumo Arena</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
-      height: 100%;
+      height: 100vh;
+      height: 100dvh;
       overflow: hidden;
+      overscroll-behavior: none;
       background: #05050a;
       font-family: 'Segoe UI', Tahoma, Verdana, sans-serif;
       color: #fff;
     }
-    #app { position: relative; width: 100vw; height: 100vh; }
+    #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
     canvas { display: block; }
 
     #hud {
       position: absolute;
-      top: 12px; left: 12px;
+      top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left));
       background: rgba(0,0,0,0.45);
       padding: 8px 14px;
       border-radius: 8px;
@@ -30,7 +33,7 @@
     }
     #controlsHint {
       position: absolute;
-      top: 12px; right: 12px;
+      top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right));
       background: rgba(0,0,0,0.45);
       padding: 8px 14px;
       border-radius: 8px;
@@ -83,12 +86,13 @@
       border: none;
       outline: none;
       width: 260px;
+      max-width: 80vw;
       text-align: center;
       margin-bottom: 14px;
     }
     #playBtn {
       font-size: 18px;
-      padding: 10px 30px;
+      padding: 12px 30px;
       border-radius: 8px;
       border: none;
       background: #e74c3c;
@@ -99,6 +103,98 @@
     }
     #playBtn:hover { background: #ff6b52; }
     #loginHint { margin-top: 18px; font-size: 13px; opacity: 0.6; }
+
+    /* --- Touch controls (mobile/tablet) --- */
+    #touchControls {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+    }
+    #touchLookLayer {
+      position: absolute;
+      inset: 0;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    #touchJoystickBase {
+      position: absolute;
+      left: max(24px, env(safe-area-inset-left));
+      bottom: max(24px, env(safe-area-inset-bottom));
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      border: 2px solid rgba(255,255,255,0.25);
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    #touchJoystickKnob {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 56px;
+      height: 56px;
+      margin-left: -28px;
+      margin-top: -28px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.35);
+      border: 2px solid rgba(255,255,255,0.5);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .touchBtn {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.18);
+      border: 2px solid rgba(255,255,255,0.3);
+      color: #fff;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    #touchJumpBtn {
+      right: max(104px, calc(env(safe-area-inset-right) + 104px));
+      bottom: max(48px, calc(env(safe-area-inset-bottom) + 48px));
+    }
+    #touchShoveBtn {
+      right: max(24px, env(safe-area-inset-right));
+      bottom: max(24px, env(safe-area-inset-bottom));
+      background: rgba(231,76,60,0.35);
+      border-color: rgba(231,76,60,0.6);
+    }
+
+    /* Non-blocking portrait hint. Pure CSS (no JS needed): only shown on
+       touch devices (pointer: coarse) that are currently in portrait, and
+       automatically hides itself the moment the device is rotated. */
+    #rotateHint {
+      display: none;
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      z-index: 20;
+      text-align: center;
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    @media (orientation: portrait) and (pointer: coarse) {
+      #rotateHint { display: block; }
+    }
   </style>
 </head>
 <body>
@@ -123,6 +219,16 @@
     </div>
     <div id="banner"></div>
     <div id="mouseLookHint" style="display:none;">Click the arena to enable mouse look</div>
+
+    <div id="touchControls" style="display:none;">
+      <div id="touchLookLayer"></div>
+      <div id="touchJoystickBase">
+        <div id="touchJoystickKnob"></div>
+      </div>
+      <div id="touchJumpBtn" class="touchBtn">JUMP</div>
+      <div id="touchShoveBtn" class="touchBtn">SHOVE</div>
+    </div>
+    <div id="rotateHint">Rotate your device for a better view</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

@@ -2,7 +2,8 @@ import { SceneManager } from './scene.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayers } from './remotePlayers.js';
 import { Network } from './network.js';
-import { SHOVE_COOLDOWN_MS, NETWORK_SEND_HZ, MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX } from './constants.js';
+import { SHOVE_COOLDOWN_MS, NETWORK_SEND_HZ, MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX, TOUCH_LOOK_SENSITIVITY } from './constants.js';
+import { isTouchDevice, initTouchControls, showTouchControls } from './touchControls.js';
 
 const loginOverlay = document.getElementById('loginOverlay');
 const nameInput = document.getElementById('nameInput');
@@ -79,8 +80,13 @@ function startRestartCountdown(titleText, restartInMs) {
 function startGame(name) {
   loginOverlay.style.display = 'none';
   hud.style.display = 'block';
-  controlsHint.style.display = 'block';
-  if (mouseLookHint) mouseLookHint.style.display = 'block';
+  // Desktop shows the keyboard/mouse control hint; touch devices get their
+  // own self-explanatory on-screen buttons instead (see setupInput below),
+  // so the desktop-only hint text would be misleading there.
+  if (!isTouchDevice()) {
+    controlsHint.style.display = 'block';
+    if (mouseLookHint) mouseLookHint.style.display = 'block';
+  }
 
   canvas = document.createElement('canvas');
   document.getElementById('app').prepend(canvas);
@@ -197,6 +203,20 @@ function setupInput() {
     }
   });
 
+  if (isTouchDevice()) {
+    // Pointer Lock isn't usable on touch (notably unsupported on iOS
+    // Safari), so skip the click-to-lock/mousemove wiring entirely rather
+    // than relying on it to silently no-op. Touch input drives the same
+    // keys/cameraYaw/cameraPitch/tryShove through initTouchControls.
+    initTouchControls({
+      keys,
+      tryShove,
+      applyLookDelta: (dx, dy) => applyMouseLookDelta(dx, dy, TOUCH_LOOK_SENSITIVITY)
+    });
+    showTouchControls();
+    return;
+  }
+
   // Mouse-look via the Pointer Lock API: click the canvas to lock the
   // cursor, then raw mouse movement drives camera yaw/pitch until Escape
   // (or an unlock event) releases it again.
@@ -209,10 +229,19 @@ function setupInput() {
   });
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement !== canvas) return;
-    cameraYaw -= e.movementX * MOUSE_SENSITIVITY;
-    cameraPitch += e.movementY * MOUSE_SENSITIVITY; // inverted: mouse-up looks the way mouse-down used to
-    cameraPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, cameraPitch));
+    applyMouseLookDelta(e.movementX, e.movementY, MOUSE_SENSITIVITY);
   });
+}
+
+// Shared yaw/pitch update math for both the Pointer-Lock mouse path and the
+// touch look-drag layer, so the clamping logic isn't duplicated. dx/dy are
+// incremental screen-pixel deltas (movementX/Y for mouse, or a manually
+// tracked last-point delta for touch); sensitivity is the only thing that
+// differs between the two input sources.
+function applyMouseLookDelta(dx, dy, sensitivity) {
+  cameraYaw -= dx * sensitivity;
+  cameraPitch += dy * sensitivity; // inverted: drag/mouse-up looks the way down used to
+  cameraPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, cameraPitch));
 }
 
 function tryShove() {

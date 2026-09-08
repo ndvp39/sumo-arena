@@ -21,6 +21,13 @@ export const MOUSE_SENSITIVITY = 0.0022;
 export const PITCH_MIN = -0.15; // radians; how far the camera can dip below eye-level
 export const PITCH_MAX = 1.3;   // radians; how far it can rise toward top-down
 
+// Touch look-drag sensitivity — roughly 2.7x MOUSE_SENSITIVITY since a touch
+// drag gesture covers far fewer screen pixels than a mouse sweep. Starting
+// point for feel-tuning, not derived from anything precise.
+export const TOUCH_LOOK_SENSITIVITY = 0.006;
+export const JOYSTICK_MAX_RADIUS_PX = 50;
+export const JOYSTICK_DEADZONE_PX = 8;
+
 export const SERVER_URL =
   import.meta.env.VITE_SERVER_URL ||
   `${window.location.protocol}//${window.location.hostname}:3000`;
