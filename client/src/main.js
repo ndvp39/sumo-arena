@@ -268,14 +268,27 @@ function loop(now) {
     sendAccumulator += dt;
     if (sendAccumulator >= sendInterval) {
       sendAccumulator = 0;
-      network.sendMove({
-        x: localPlayer.position.x,
-        y: localPlayer.position.y,
-        z: localPlayer.position.z,
-        rotY: localPlayer.rotY
-      });
-      lastSentX = localPlayer.position.x;
-      lastSentZ = localPlayer.position.z;
+      // Only stream position while alive. The server already ignores move
+      // updates from a dead player (GameRoom.updateFromClient), but there's
+      // a race: this client keeps free-falling its own view for the
+      // dramatic drop the whole time it's dead/spectating (which can be
+      // several seconds, arbitrarily far below the map), and a packet sent
+      // during that fall can still be in flight when the round restarts and
+      // the server flips this player back to alive - at which point that
+      // stale packet would be accepted, snapping the freshly-spawned player
+      // back into "still falling" territory and instantly re-eliminating
+      // them, restarting the round again. Never sending while dead means no
+      // such stale packet can ever be in flight to race against a respawn.
+      if (localPlayer.alive) {
+        network.sendMove({
+          x: localPlayer.position.x,
+          y: localPlayer.position.y,
+          z: localPlayer.position.z,
+          rotY: localPlayer.rotY
+        });
+        lastSentX = localPlayer.position.x;
+        lastSentZ = localPlayer.position.z;
+      }
     }
   }
 
