@@ -41,6 +41,12 @@ export function initTouchControls({ keys, tryShove, applyLookDelta }) {
   }
 
   joystickBase?.addEventListener('pointerdown', (e) => {
+    // touch-action: none (CSS) is the passive gesture suppressor, but some
+    // mobile browsers still let rapid repeated taps trigger double-tap-zoom
+    // on elements driven via Pointer Events + setPointerCapture unless the
+    // gesture is also actively cancelled here - the standard belt-and-
+    // suspenders fix every touch-control library uses.
+    e.preventDefault();
     if (joystickPointerId !== null) return;
     joystickPointerId = e.pointerId;
     joystickBase.setPointerCapture(e.pointerId);
@@ -90,6 +96,7 @@ export function initTouchControls({ keys, tryShove, applyLookDelta }) {
   let lastLookY = 0;
 
   lookLayer?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     if (lookPointerId !== null) return;
     lookPointerId = e.pointerId;
     lookLayer.setPointerCapture(e.pointerId);
@@ -113,6 +120,7 @@ export function initTouchControls({ keys, tryShove, applyLookDelta }) {
 
   // --- Jump button (held, mirrors held-Space semantics) -------------------
   jumpBtn?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     jumpBtn.setPointerCapture(e.pointerId);
     keys.space = true;
   });
@@ -122,6 +130,7 @@ export function initTouchControls({ keys, tryShove, applyLookDelta }) {
 
   // --- Shove button (single tap, tryShove() has its own cooldown gate) ----
   shoveBtn?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     shoveBtn.setPointerCapture(e.pointerId);
     tryShove();
   });
