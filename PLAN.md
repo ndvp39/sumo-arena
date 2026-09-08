@@ -150,7 +150,7 @@ tint for the sun/ambient/fill lights (`lightColor`, `lightIntensity`,
 cylinders, points), no external assets, arranged in a ring just outside the
 boundary.
 
-Ships with **8 maps**, each a distinct subject:
+Ships with **9 maps**, each a distinct subject:
 
 | Map | Subject | Decoration theme |
 |---|---|---|
@@ -162,6 +162,7 @@ Ships with **8 maps**, each a distinct subject:
 | Neon Grid | Cyberpunk grid floor | `neon` — neon grid overlay + glowing pylons |
 | Desert Mesa | Sun-baked desert | `desert` — rock formations + cacti |
 | Deep Space Station | Zero-atmosphere void | `space` — starfield + drifting asteroids |
+| Sky Temple Ruins | Ancient ruins adrift in a sunset sky | `skytemple` — broken mossy pillars, floating rock islands, drifting golden sparkles |
 
 ## 7. Real-time synchronization
 

@@ -148,12 +148,28 @@ export const MAPS = {
     ambientColor: 0x334466,
     emissiveGround: null,
     decoration: 'space'
+  },
+  skyTemple: {
+    id: 'skyTemple',
+    name: 'Sky Temple Ruins',
+    radius: 8.5,
+    spawnRadius: 8.5 * 0.55,
+    height: 0.5,
+    groundColor: 0x9c8f72,
+    ringColor: 0xffd700,
+    voidColor: 0x140a24,
+    skyColor: 0xff9a56,
+    lightColor: 0xffe0b0,
+    lightIntensity: 1.2,
+    ambientColor: 0xccaaff,
+    emissiveGround: 0x2a1f10,
+    decoration: 'skytemple'
   }
 };
 
 export const MAP_ROTATION = [
   'classic', 'volcano', 'smallRing', 'frozen',
-  'grandArena', 'neonGrid', 'desertMesa', 'deepSpace'
+  'grandArena', 'neonGrid', 'desertMesa', 'deepSpace', 'skyTemple'
 ];
 export const DEFAULT_MAP_ID = 'classic';
 

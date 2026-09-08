@@ -133,7 +133,8 @@ export class SceneManager {
       ice: () => this._decorateIce(map),
       neon: () => this._decorateNeon(map),
       desert: () => this._decorateDesert(map),
-      space: () => this._decorateSpace(map)
+      space: () => this._decorateSpace(map),
+      skytemple: () => this._decorateSkyTemple(map)
     };
     (builders[map.decoration] || (() => {}))();
   }
@@ -304,6 +305,62 @@ export class SceneManager {
       asteroid.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
       return asteroid;
     });
+  }
+
+  // Ancient ruins drifting in a sunset sky: broken mossy pillars ringing the
+  // platform, floating rock islands at varied height/distance just beyond
+  // it, and a drifting field of golden sparkles for atmosphere. Same prop
+  // budget as the heaviest existing theme (Volcano Pit's 16 meshes) plus one
+  // Points draw call for the sparkles, and nothing here casts a shadow.
+  _decorateSkyTemple(map) {
+    this._ringOfProps(8, 1.15, map, (i) => {
+      const g = new THREE.Group();
+      const broken = i % 3 === 0;
+      const h = broken ? 1.6 : 3.4;
+      const pillar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.22, 0.28, h, 8),
+        new THREE.MeshStandardMaterial({ color: 0x8a8272, roughness: 0.95 })
+      );
+      pillar.position.y = h / 2;
+      pillar.rotation.z = broken ? (Math.random() - 0.5) * 0.3 : 0;
+      g.add(pillar);
+      const mossCap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.26, 0.05, 6, 12),
+        new THREE.MeshStandardMaterial({ color: 0x5a8a4a, emissive: 0x2a5a1a, emissiveIntensity: 0.4, roughness: 0.8 })
+      );
+      mossCap.position.y = h * 0.65;
+      mossCap.rotation.x = Math.PI / 2;
+      g.add(mossCap);
+      return g;
+    });
+
+    this._ringOfProps(8, 1.55 + Math.random() * 0.35, map, () => {
+      const s = 0.5 + Math.random() * 0.5;
+      const rock = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(s, 0),
+        new THREE.MeshStandardMaterial({ color: 0x6e6555, roughness: 1, flatShading: true })
+      );
+      rock.position.y = 1.5 + Math.random() * 3;
+      rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      return rock;
+    });
+
+    const sparkleCount = 350;
+    const positions = new Float32Array(sparkleCount * 3);
+    for (let i = 0; i < sparkleCount; i++) {
+      const r = map.radius * (0.3 + Math.random() * 1.6);
+      const theta = Math.random() * Math.PI * 2;
+      positions[i * 3] = Math.cos(theta) * r;
+      positions[i * 3 + 1] = 0.5 + Math.random() * 6;
+      positions[i * 3 + 2] = Math.sin(theta) * r;
+    }
+    const sparkleGeom = new THREE.BufferGeometry();
+    sparkleGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const sparkles = new THREE.Points(
+      sparkleGeom,
+      new THREE.PointsMaterial({ color: 0xffdd88, size: 0.12, sizeAttenuation: true, transparent: true, opacity: 0.85 })
+    );
+    this.arenaGroup.add(sparkles);
   }
 
   // Mouse-look third-person orbit camera: yaw/pitch come from accumulated
