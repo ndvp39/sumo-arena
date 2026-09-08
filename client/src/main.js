@@ -23,6 +23,25 @@ let lastShoveClientTime = 0;
 
 const keys = { w: false, a: false, s: false, d: false, space: false };
 
+// Last-resort, page-wide zoom guards. CSS touch-action and the per-control
+// preventDefault() calls in touchControls.js should already stop zoom, but
+// some mobile browsers still let it through regardless - these two catch it
+// unconditionally, everywhere on the page (not just the touch control
+// zones), and are no-ops on desktop since neither event fires there:
+// - a document-wide double-tap debounce (cancels any touchend landing
+//   within 350ms of the previous one, the classic cross-browser fix)
+// - iOS Safari's proprietary pinch-zoom gesture events, which fire
+//   independently of touch-action/Pointer Events on some iOS versions.
+let lastTouchEndAt = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEndAt < 350) e.preventDefault();
+  lastTouchEndAt = now;
+}, { passive: false });
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+document.addEventListener('gestureend', (e) => e.preventDefault());
+
 // Mouse-look camera orbit state, driven by Pointer Lock (see setupInput).
 // yaw/pitch are independent of the avatar's own transform — the avatar's
 // facing is derived FROM cameraYaw each frame in player.js, not vice versa.
