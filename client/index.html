@@ -65,6 +65,21 @@
     }
     #banner .sub { font-size: 15px; opacity: 0.8; margin-top: 6px; }
 
+    /* Small build-version tag, tucked into the corner margin so it never
+       overlaps the mobile joystick (which starts 24px from this same
+       corner). Bump the text each time a change ships, so it's easy to
+       confirm a phone/browser has actually picked up the latest build. */
+    #versionTag {
+      position: absolute;
+      bottom: max(4px, env(safe-area-inset-bottom));
+      left: max(6px, env(safe-area-inset-left));
+      font-size: 10px;
+      color: rgba(255,255,255,0.35);
+      pointer-events: none;
+      user-select: none;
+      z-index: 6;
+    }
+
     #mouseLookHint {
       position: absolute;
       bottom: 22px; left: 50%;
@@ -238,6 +253,7 @@
       <div id="touchShoveBtn" class="touchBtn">SHOVE</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
+    <div id="versionTag">v1.1</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
