@@ -118,6 +118,10 @@ export class LocalPlayer {
     this.alive = true;
     this.avatar.fallProgress = 0;
     this.avatar.group.rotation.z = 0;
+    // A stale correction from before death (e.g. still converging when
+    // eliminated) would otherwise ease the fresh spawn position back
+    // toward the out-of-bounds spot the player died at.
+    this.serverTarget = null;
   }
 
   // Records a genuine server-side adjustment (e.g. collision push-apart),

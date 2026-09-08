@@ -23,8 +23,8 @@ export class GameRoom {
     this.map = getMap(mapId);
   }
 
-  spawnPoint(index) {
-    const total = Math.max(this.players.size + 1, MIN_PLAYERS_TO_START);
+  spawnPoint(index, total) {
+    total = Math.max(total, MIN_PLAYERS_TO_START);
     const angle = (index / total) * Math.PI * 2;
     const r = this.map.spawnRadius;
     const x = Math.cos(angle) * r;
@@ -38,7 +38,7 @@ export class GameRoom {
 
   addPlayer(id, name) {
     const index = this.players.size;
-    const { x, z, rotY } = this.spawnPoint(index);
+    const { x, z, rotY } = this.spawnPoint(index, this.players.size + 1);
     const color = PLAYER_COLORS[this.nextColorIndex % PLAYER_COLORS.length];
     this.nextColorIndex++;
 
@@ -182,7 +182,7 @@ export class GameRoom {
 
     let index = 0;
     for (const player of this.players.values()) {
-      const { x, z, rotY } = this.spawnPoint(index++);
+      const { x, z, rotY } = this.spawnPoint(index++, this.players.size);
       player.x = x;
       player.y = 0;
       player.z = z;
