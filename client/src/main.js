@@ -287,8 +287,21 @@ function loop(now) {
   window.__debug = { cameraYaw, cameraPitch, position: localPlayer?.position, alive: localPlayer?.alive };
 }
 
+// Phones reserve on-screen space for the browser's address bar unless the
+// page enters fullscreen; since this page never scrolls, the bar never gets
+// the scroll gesture that would normally let it auto-collapse. Requesting
+// fullscreen here (a real user gesture, required by the API) reclaims that
+// space. Silently no-ops if unsupported/denied — never blocks play.
+function requestFullscreenSafe() {
+  const el = document.documentElement;
+  const request = el.requestFullscreen?.bind(el) || el.webkitRequestFullscreen?.bind(el);
+  const result = request?.();
+  result?.catch?.(() => {});
+}
+
 playBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
+  if (isTouchDevice()) requestFullscreenSafe();
   startGame(name);
 });
 nameInput.addEventListener('keydown', (e) => {

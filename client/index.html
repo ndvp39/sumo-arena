@@ -4,8 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#05050a">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Sumo Arena</title>
   <style>
+    /* Kills double-tap-to-zoom everywhere by default (login screen included)
+       without blocking normal single taps/typing. The touch control zones
+       below override this back to `none` where they handle raw drag
+       gestures themselves and want zero native interference. */
+    * {
+      touch-action: manipulation;
+    }
     html, body {
       margin: 0;
       padding: 0;
