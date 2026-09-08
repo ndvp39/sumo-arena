@@ -115,3 +115,17 @@ export function updateAvatar(avatar, now, isAlive) {
 export function triggerPunch(avatar, now) {
   avatar.punchStartTime = now;
 }
+
+// Restores an avatar to fully visible after a respawn. Must be called
+// explicitly by respawn code rather than left to updateAvatar's own
+// "isAlive && fallProgress > 0" reset branch above: respawn code sets
+// fallProgress directly to 0, which is exactly the value that makes that
+// branch's condition false, so materials faded out by a prior death/fall
+// would otherwise never get their opacity restored.
+export function resetAvatarVisuals(avatar) {
+  avatar.fallProgress = 0;
+  avatar.group.rotation.z = 0;
+  avatar.group.traverse((obj) => {
+    if (obj.material) obj.material.opacity = 1;
+  });
+}

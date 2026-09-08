@@ -1,4 +1,4 @@
-import { createAvatar, updateAvatar, triggerPunch } from './avatar.js';
+import { createAvatar, updateAvatar, triggerPunch, resetAvatarVisuals } from './avatar.js';
 import { REMOTE_LERP_FACTOR } from './constants.js';
 
 // Manages every non-local player's avatar: creation/removal, smoothing
@@ -62,7 +62,7 @@ export class RemotePlayers {
       if (!entry) continue;
       entry.avatar.group.position.set(p.x, p.y, p.z);
       entry.avatar.group.rotation.set(0, p.rotY, 0);
-      entry.avatar.fallProgress = 0;
+      resetAvatarVisuals(entry.avatar);
       entry.target = { x: p.x, y: p.y, z: p.z, rotY: p.rotY };
       entry.alive = true;
     }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY } from './constants.js';
-import { createAvatar, updateAvatar, triggerPunch } from './avatar.js';
+import { createAvatar, updateAvatar, triggerPunch, resetAvatarVisuals } from './avatar.js';
 
 // Local player: fully client-simulated movement/gravity/jump for zero input
 // lag. The server only ever validates the *consequences* (boundary,
@@ -116,8 +116,7 @@ export class LocalPlayer {
     this.rotY = rotY;
     this.grounded = true;
     this.alive = true;
-    this.avatar.fallProgress = 0;
-    this.avatar.group.rotation.z = 0;
+    resetAvatarVisuals(this.avatar);
     // A stale correction from before death (e.g. still converging when
     // eliminated) would otherwise ease the fresh spawn position back
     // toward the out-of-bounds spot the player died at.
