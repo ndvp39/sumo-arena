@@ -76,14 +76,20 @@ let restartCountdownTimer = null;
 let lastSentX = 0;
 let lastSentZ = 0;
 
-// Paints the desktop charge ring (mobile's equivalent lives on the shove
-// button itself, see touchControls.js#setShoveChargeProgress). progress <= 0
-// hides it entirely.
+// Paints whichever charge indicator applies — the desktop ring and the
+// mobile shove-button fill (touchControls.js#setShoveChargeProgress) are
+// updated unconditionally, not gated on isTouchDevice(). That check is only
+// used at setup time to decide which *container* is visible/interactive
+// (#touchControls vs the keyboard/mouse hints) — deciding which UI to PAINT
+// here as well used to double as an implicit "is this really a touch
+// device" gate, and `pointer: coarse` is a known-unreliable signal on
+// hybrid/touchscreen laptops (it can read coarse even with a keyboard and
+// mouse actively in use), which silently sent every update to the hidden
+// mobile button instead of the visible desktop ring. Updating both is
+// harmless either way: whichever container CSS actually hides stays
+// invisible regardless of what its fill color is set to.
 function updateChargeUI(progress) {
-  if (isTouchDevice()) {
-    setShoveChargeProgress(progress);
-    return;
-  }
+  setShoveChargeProgress(progress);
   if (!desktopChargeRing) return;
   if (progress > 0) {
     desktopChargeRing.style.display = 'block';
