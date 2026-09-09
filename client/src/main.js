@@ -24,6 +24,7 @@ const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
 const debugOverlay = document.getElementById('debugOverlay');
 const bruteForceFlash = document.getElementById('bruteForceFlash');
+const bruteForceAbs = document.getElementById('bruteForceAbs');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -96,6 +97,10 @@ function updateChargeUI(progress) {
   // this full-screen fixed-position flash doesn't show while charging
   // either, the problem isn't the ring's own CSS/stacking at all.
   if (bruteForceFlash) bruteForceFlash.style.display = progress > 0 ? 'block' : 'none';
+  // Isolates whether position:absolute + bottom-anchoring inside #app
+  // specifically (the ring's own positioning method) is what's failing,
+  // independent of the ring's size/colors/z-index.
+  if (bruteForceAbs) bruteForceAbs.style.display = progress > 0 ? 'block' : 'none';
   if (!desktopChargeRing) return;
   if (progress > 0) {
     desktopChargeRing.style.display = 'block';

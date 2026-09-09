@@ -119,6 +119,20 @@
       z-index: 2147483647;
       pointer-events: none;
     }
+    /* Second isolation test: same positioning METHOD as #desktopChargeRing
+       (position:absolute, bottom-anchored, nested in #app) but huge and
+       lime-green, to test whether that specific combination is what's
+       failing to render, independent of the ring's own size/colors. */
+    #bruteForceAbs {
+      display: none;
+      position: absolute;
+      bottom: 92px; left: 50%;
+      transform: translateX(-50%);
+      width: 250px; height: 250px;
+      background: #39ff14;
+      z-index: 2000;
+      pointer-events: none;
+    }
 
     #mouseLookHint {
       position: absolute;
@@ -392,6 +406,7 @@
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
     <div id="debugOverlay"></div>
     <div id="bruteForceFlash"></div>
+    <div id="bruteForceAbs"></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -403,7 +418,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.11</div>
+    <div id="versionTag">v1.12</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
