@@ -91,6 +91,80 @@
       pointer-events: none;
     }
 
+    /* --- Shove charge ring (desktop) --- */
+    #desktopChargeRing {
+      position: absolute;
+      bottom: 92px; left: 50%;
+      transform: translateX(-50%);
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.4);
+      background: rgba(0,0,0,0.3);
+      pointer-events: none;
+      z-index: 6;
+      display: none;
+    }
+    #desktopChargeFill {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+    }
+
+    /* --- Special-power meter (both platforms) --- */
+    #specialMeter {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.45);
+      padding: 8px 18px;
+      border-radius: 10px;
+      text-align: center;
+      pointer-events: none;
+      z-index: 6;
+      display: none;
+      transition: box-shadow 0.2s;
+    }
+    #specialMeter .specialTitle {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      opacity: 0.7;
+      margin-bottom: 5px;
+    }
+    #specialMeter .specialPips {
+      display: flex;
+      gap: 7px;
+      justify-content: center;
+      margin-bottom: 5px;
+    }
+    #specialMeter .pip {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.35);
+      background: transparent;
+      transition: background 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+    #specialMeter .pip.filled {
+      background: #ffcc33;
+      border-color: #ffcc33;
+      box-shadow: 0 0 6px 2px rgba(255,204,51,0.7);
+    }
+    #specialHint {
+      font-size: 12px;
+      opacity: 0.85;
+      white-space: nowrap;
+    }
+    #specialMeter.ready {
+      animation: specialGlow 1.1s ease-in-out infinite;
+    }
+    #specialMeter.ready #specialHint {
+      color: #66e0ff;
+      font-weight: bold;
+    }
+    @keyframes specialGlow {
+      0%, 100% { box-shadow: 0 0 0 rgba(102,224,255,0); }
+      50% { box-shadow: 0 0 22px 5px rgba(102,224,255,0.65); }
+    }
+
     #loginOverlay {
       position: absolute;
       inset: 0;
@@ -198,6 +272,29 @@
       background: rgba(231,76,60,0.35);
       border-color: rgba(231,76,60,0.6);
     }
+    /* Dim and inert until the server confirms the combo is complete (see
+       touchControls.js#setSpecialReady) — tapping it before then is a no-op
+       anyway, so this keeps that obvious instead of surprising. */
+    #touchSpecialBtn {
+      right: max(24px, env(safe-area-inset-right));
+      bottom: max(148px, calc(env(safe-area-inset-bottom) + 148px));
+      background: rgba(102,224,255,0.12);
+      border-color: rgba(102,224,255,0.3);
+      opacity: 0.4;
+      pointer-events: none;
+      transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+    }
+    #touchSpecialBtn.ready {
+      opacity: 1;
+      pointer-events: auto;
+      background: rgba(102,224,255,0.35);
+      border-color: rgba(102,224,255,0.9);
+      animation: specialPulse 1.1s ease-in-out infinite;
+    }
+    @keyframes specialPulse {
+      0%, 100% { box-shadow: 0 0 6px 2px rgba(102,224,255,0.5); transform: scale(1); }
+      50% { box-shadow: 0 0 18px 8px rgba(102,224,255,0.85); transform: scale(1.08); }
+    }
 
     /* Non-blocking portrait hint. Pure CSS (no JS needed): only shown on
        touch devices (pointer: coarse) that are currently in portrait, and
@@ -228,7 +325,7 @@
       <p>Push everyone out. Last one standing wins.</p>
       <input id="nameInput" type="text" maxlength="16" placeholder="Your name" />
       <button id="playBtn">PLAY</button>
-      <div id="loginHint">WASD move &middot; SPACE jump &middot; F shove</div>
+      <div id="loginHint">WASD/arrows move &middot; SPACE jump &middot; F/click shove (hold to charge) &middot; Q/right-click special</div>
     </div>
 
     <div id="hud" style="display:none;">
@@ -236,13 +333,23 @@
       <div id="aliveCount">Players alive: —</div>
     </div>
     <div id="controlsHint" style="display:none;">
-      W A S D — move<br/>
+      WASD / arrows — move<br/>
       SPACE — jump<br/>
-      F — shove<br/>
+      F / left click — shove (hold to charge)<br/>
+      Q / right click — special kick<br/>
       MOUSE — look
     </div>
     <div id="banner"></div>
     <div id="mouseLookHint" style="display:none;">Click the arena to enable mouse look</div>
+
+    <div id="specialMeter">
+      <div class="specialTitle">SPECIAL POWER</div>
+      <div class="specialPips">
+        <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+      </div>
+      <div id="specialHint">Land 3 charged shoves</div>
+    </div>
+    <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -251,9 +358,10 @@
       </div>
       <div id="touchJumpBtn" class="touchBtn">JUMP</div>
       <div id="touchShoveBtn" class="touchBtn">SHOVE</div>
+      <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.3</div>
+    <div id="versionTag">v1.5</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

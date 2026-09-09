@@ -1,5 +1,15 @@
 import * as THREE from 'three';
-import { PUNCH_ANIM_MS } from './constants.js';
+import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS } from './constants.js';
+
+// Animation profile per shove power tier. 'special' swings both arms back
+// and both legs forward together (a two-legged flying kick), and both
+// tiers above 'normal' pulse an emissive glow on the swinging limbs so the
+// windup/impact reads clearly from a distance, not just up close.
+const POWER_ANIM = {
+  normal:  { duration: PUNCH_ANIM_MS,        armSwing: Math.PI / 2.1, legSwing: 0,            glow: null },
+  charged: { duration: CHARGED_PUNCH_ANIM_MS, armSwing: Math.PI / 1.7, legSwing: 0,            glow: 0xffcc33 },
+  special: { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 2.5, legSwing: Math.PI / 2.4, glow: 0x66e0ff }
+};
 
 function makeNameSprite(name) {
   const canvas = document.createElement('canvas');
@@ -32,6 +42,11 @@ export function createAvatar(name, colorHex) {
   const group = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6 });
   const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xf0c8a0, roughness: 0.7 });
+  // Arms/legs get their own material instances (cloned from skin) so a
+  // charged/special glow can pulse just the swinging limbs without
+  // affecting the head.
+  const armMaterial = skinMaterial.clone();
+  const legMaterial = skinMaterial.clone();
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.35), material);
   torso.position.y = 1.0;
@@ -43,20 +58,30 @@ export function createAvatar(name, colorHex) {
   head.castShadow = true;
   group.add(head);
 
+  // Legs are parented to hip pivot groups (mirroring the arm pivots below)
+  // so both can swing forward together for the special two-legged kick.
   const legGeom = new THREE.BoxGeometry(0.22, 0.75, 0.22);
-  const leftLeg = new THREE.Mesh(legGeom, skinMaterial);
-  leftLeg.position.set(-0.16, 0.22, 0);
-  leftLeg.castShadow = true;
-  const rightLeg = leftLeg.clone();
-  rightLeg.position.set(0.16, 0.22, 0);
-  group.add(leftLeg, rightLeg);
+
+  function makeLegPivot(sideSign) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sideSign * 0.16, 0.6, 0);
+    const leg = new THREE.Mesh(legGeom, legMaterial);
+    leg.position.set(0, -0.375, 0);
+    leg.castShadow = true;
+    pivot.add(leg);
+    return pivot;
+  }
+
+  const leftLegPivot = makeLegPivot(-1);
+  const rightLegPivot = makeLegPivot(1);
+  group.add(leftLegPivot, rightLegPivot);
 
   const armGeom = new THREE.BoxGeometry(0.18, 0.6, 0.18);
 
   function makeArmPivot(sideSign) {
     const pivot = new THREE.Group();
     pivot.position.set(sideSign * 0.42, 1.35, 0);
-    const arm = new THREE.Mesh(armGeom, skinMaterial);
+    const arm = new THREE.Mesh(armGeom, armMaterial);
     arm.position.set(0, -0.3, 0);
     arm.castShadow = true;
     pivot.add(arm);
@@ -72,25 +97,45 @@ export function createAvatar(name, colorHex) {
 
   return {
     group,
-    parts: { torso, head, leftArmPivot, rightArmPivot, nameSprite },
+    parts: { torso, head, leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot, nameSprite, armMaterial, legMaterial },
     punchStartTime: -Infinity,
+    punchPower: 'normal',
     fallProgress: 0
   };
 }
 
-// Called once per frame per avatar. Animates the punch swing and, once
-// eliminated, a topple-and-fade so the player visibly drops out.
+// Called once per frame per avatar. Animates the punch/kick swing (shape
+// and glow depend on the shove's power tier, see POWER_ANIM above) and,
+// once eliminated, a topple-and-fade so the player visibly drops out.
 export function updateAvatar(avatar, now, isAlive) {
-  const { leftArmPivot, rightArmPivot } = avatar.parts;
+  const { leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot, armMaterial, legMaterial } = avatar.parts;
+  const cfg = POWER_ANIM[avatar.punchPower] || POWER_ANIM.normal;
   const elapsed = now - avatar.punchStartTime;
-  if (elapsed >= 0 && elapsed < PUNCH_ANIM_MS) {
-    const t = elapsed / PUNCH_ANIM_MS;
-    const swing = Math.sin(t * Math.PI) * (Math.PI / 2.1);
-    leftArmPivot.rotation.x = -swing;
-    rightArmPivot.rotation.x = -swing;
+
+  if (elapsed >= 0 && elapsed < cfg.duration) {
+    const t = elapsed / cfg.duration;
+    const s = Math.sin(t * Math.PI);
+
+    const armSwing = s * cfg.armSwing;
+    leftArmPivot.rotation.x = -armSwing;
+    rightArmPivot.rotation.x = -armSwing;
+
+    const legSwing = s * cfg.legSwing;
+    leftLegPivot.rotation.x = -legSwing;
+    rightLegPivot.rotation.x = -legSwing;
+
+    const glowIntensity = cfg.glow ? s * 0.9 : 0;
+    armMaterial.emissive.setHex(cfg.glow || 0x000000);
+    armMaterial.emissiveIntensity = glowIntensity;
+    legMaterial.emissive.setHex(cfg.glow || 0x000000);
+    legMaterial.emissiveIntensity = cfg.legSwing ? glowIntensity : 0;
   } else {
     leftArmPivot.rotation.x = 0;
     rightArmPivot.rotation.x = 0;
+    leftLegPivot.rotation.x = 0;
+    rightLegPivot.rotation.x = 0;
+    armMaterial.emissiveIntensity = 0;
+    legMaterial.emissiveIntensity = 0;
   }
 
   if (!isAlive && avatar.fallProgress < 1) {
@@ -112,8 +157,9 @@ export function updateAvatar(avatar, now, isAlive) {
   }
 }
 
-export function triggerPunch(avatar, now) {
+export function triggerPunch(avatar, now, power = 'normal') {
   avatar.punchStartTime = now;
+  avatar.punchPower = power;
 }
 
 // Restores an avatar to fully visible after a respawn. Must be called

@@ -1,6 +1,8 @@
 import {
   PLAYER_RADIUS, ELIMINATION_Y,
   SHOVE_RANGE, SHOVE_FORCE, SHOVE_UP_FORCE, SHOVE_COOLDOWN_MS,
+  CHARGED_SHOVE_FORCE, CHARGED_SHOVE_UP_FORCE,
+  SPECIAL_POWER_THRESHOLD, SPECIAL_KICK_RANGE, SPECIAL_KICK_FORCE, SPECIAL_KICK_UP_FORCE,
   TICK_RATE_HZ, ROUND_RESTART_DELAY_MS, MIN_PLAYERS_TO_START,
   PLAYER_COLORS
 } from './constants.js';
@@ -48,7 +50,9 @@ export class GameRoom {
       color,
       x, y: 0, z, rotY,
       alive: true,
-      lastShoveTime: 0
+      lastShoveTime: 0,
+      chargedHitStreak: 0,
+      specialReady: false
     };
     this.players.set(id, player);
     this.roundActive = true;
@@ -71,26 +75,46 @@ export class GameRoom {
     player.rotY = data.rotY || 0;
   }
 
-  handleShove(id) {
+  // power: 'normal' | 'charged' | 'special'. 'charged' is a 2s-hold shove
+  // (see CHARGE_HOLD_MS on the client) that hits harder and, on landing,
+  // advances the pusher's combo toward a 'special' (a two-legged kick,
+  // unlocked after SPECIAL_POWER_THRESHOLD charged hits land) — see
+  // client/src/main.js for the input/UI side of both.
+  handleShove(id, power = 'normal') {
     const pusher = this.players.get(id);
     if (!pusher || !pusher.alive || !this.roundActive) return;
+    // Guards against a stale/forged 'special' request from a client whose
+    // combo the server never actually completed.
+    if (power === 'special' && !pusher.specialReady) return;
 
     const now = Date.now();
     if (now - pusher.lastShoveTime < SHOVE_COOLDOWN_MS) return;
     pusher.lastShoveTime = now;
 
-    this.io.emit('shoveAction', { playerId: id });
+    if (power === 'special') {
+      pusher.specialReady = false;
+      pusher.chargedHitStreak = 0;
+      this.io.to(id).emit('specialProgress', { count: 0, threshold: SPECIAL_POWER_THRESHOLD, ready: false });
+    }
+
+    this.io.emit('shoveAction', { playerId: id, power });
+
+    const range = power === 'special' ? SPECIAL_KICK_RANGE : SHOVE_RANGE;
+    const force = power === 'special' ? SPECIAL_KICK_FORCE : power === 'charged' ? CHARGED_SHOVE_FORCE : SHOVE_FORCE;
+    const upForce = power === 'special' ? SPECIAL_KICK_UP_FORCE : power === 'charged' ? CHARGED_SHOVE_UP_FORCE : SHOVE_UP_FORCE;
 
     // Omnidirectional: any alive player within range gets pushed away from
     // the pusher, no facing/cone requirement. Simpler and more forgiving —
     // matches classic sumo "get close and shove" play instead of requiring
     // precise aim.
+    let hitAny = false;
     for (const target of this.players.values()) {
       if (target.id === id || !target.alive) continue;
       const dx = target.x - pusher.x;
       const dz = target.z - pusher.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > SHOVE_RANGE || dist < 0.0001) continue;
+      if (dist > range || dist < 0.0001) continue;
+      hitAny = true;
 
       const ndx = dx / dist;
       const ndz = dz / dist;
@@ -100,8 +124,25 @@ export class GameRoom {
         targetId: target.id,
         dirX: ndx,
         dirZ: ndz,
-        force: SHOVE_FORCE,
-        upForce: SHOVE_UP_FORCE
+        force,
+        upForce,
+        power
+      });
+    }
+
+    // Only a successful (landed) charged shove counts toward the combo —
+    // charging and whiffing doesn't build it, but it doesn't reset it
+    // either, so a miss just costs the 2s wind-up rather than the streak.
+    if (power === 'charged' && hitAny) {
+      pusher.chargedHitStreak += 1;
+      if (pusher.chargedHitStreak >= SPECIAL_POWER_THRESHOLD) {
+        pusher.chargedHitStreak = 0;
+        pusher.specialReady = true;
+      }
+      this.io.to(id).emit('specialProgress', {
+        count: pusher.specialReady ? SPECIAL_POWER_THRESHOLD : pusher.chargedHitStreak,
+        threshold: SPECIAL_POWER_THRESHOLD,
+        ready: pusher.specialReady
       });
     }
   }
@@ -188,6 +229,11 @@ export class GameRoom {
       player.z = z;
       player.rotY = rotY;
       player.alive = true;
+      // Fresh round, fresh combo — a special earned last round shouldn't
+      // carry over as a surprise opening move.
+      player.chargedHitStreak = 0;
+      player.specialReady = false;
+      this.io.to(player.id).emit('specialProgress', { count: 0, threshold: SPECIAL_POWER_THRESHOLD, ready: false });
     }
     this.roundActive = true;
     this.io.emit('roundStart', { map: this.serializeMap(), players: this.serializeAll() });
@@ -218,13 +264,13 @@ export class GameRoom {
       id, name, radius, spawnRadius, height,
       groundColor, ringColor, voidColor, skyColor,
       lightColor, lightIntensity, ambientColor,
-      emissiveGround, decoration
+      emissiveGround, decoration, liquidColor, liquidGlow
     } = this.map;
     return {
       id, name, radius, spawnRadius, height,
       groundColor, ringColor, voidColor, skyColor,
       lightColor, lightIntensity, ambientColor,
-      emissiveGround, decoration
+      emissiveGround, decoration, liquidColor, liquidGlow
     };
   }
 

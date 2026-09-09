@@ -35,8 +35,8 @@ io.on('connection', (socket) => {
     room.updateFromClient(socket.id, data);
   });
 
-  socket.on('shove', () => {
-    room.handleShove(socket.id);
+  socket.on('shove', (data) => {
+    room.handleShove(socket.id, data?.power || 'normal');
   });
 
   socket.on('disconnect', () => {

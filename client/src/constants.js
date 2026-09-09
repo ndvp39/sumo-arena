@@ -11,6 +11,14 @@ export const MOVE_SPEED = 5;
 
 export const SHOVE_COOLDOWN_MS = 650;
 export const PUNCH_ANIM_MS = 300;
+export const CHARGED_PUNCH_ANIM_MS = 450;
+export const SPECIAL_KICK_ANIM_MS = 550;
+
+// Hold the shove input this long for a charged shove instead of a tap.
+export const CHARGE_HOLD_MS = 2000;
+// Mirrors server/constants.js SPECIAL_POWER_THRESHOLD — used only as the
+// HUD's initial "0/3" state before the server's first specialProgress event.
+export const SPECIAL_POWER_THRESHOLD = 3;
 
 export const KNOCKBACK_DECAY = 4.5; // higher = knockback velocity dies out faster
 

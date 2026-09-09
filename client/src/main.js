@@ -2,8 +2,11 @@ import { SceneManager } from './scene.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayers } from './remotePlayers.js';
 import { Network } from './network.js';
-import { SHOVE_COOLDOWN_MS, NETWORK_SEND_HZ, MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX, TOUCH_LOOK_SENSITIVITY } from './constants.js';
-import { isTouchDevice, initTouchControls, showTouchControls } from './touchControls.js';
+import {
+  SHOVE_COOLDOWN_MS, NETWORK_SEND_HZ, MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX,
+  TOUCH_LOOK_SENSITIVITY, CHARGE_HOLD_MS, SPECIAL_POWER_THRESHOLD
+} from './constants.js';
+import { isTouchDevice, initTouchControls, showTouchControls, setShoveChargeProgress, setSpecialReady } from './touchControls.js';
 
 const loginOverlay = document.getElementById('loginOverlay');
 const nameInput = document.getElementById('nameInput');
@@ -14,12 +17,29 @@ const mapNameEl = document.getElementById('mapName');
 const aliveCountEl = document.getElementById('aliveCount');
 const banner = document.getElementById('banner');
 const mouseLookHint = document.getElementById('mouseLookHint');
+const specialMeterEl = document.getElementById('specialMeter');
+const specialPipEls = specialMeterEl ? [...specialMeterEl.querySelectorAll('.pip')] : [];
+const specialHintEl = document.getElementById('specialHint');
+const desktopChargeRing = document.getElementById('desktopChargeRing');
+const desktopChargeFill = document.getElementById('desktopChargeFill');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
 let selfId = null;
+let selfColor = null; // this player's server-assigned color, used to tint their own death-effect debris
 let controlsEnabled = false;
 let lastShoveClientTime = 0;
+
+// Shove hold-to-charge state, shared by the desktop F key and the mobile
+// shove button (see onShovePress/onShoveRelease). chargeStartTime is the
+// performance.now() the current charge cycle began, or null when idle.
+let fShoveHeld = false;
+let chargeStartTime = null;
+
+// Special-power combo, mirrored from the server's authoritative count via
+// the 'specialProgress' event — this is display-only, never gates anything
+// server-side doesn't already gate (see GameRoom#handleShove).
+let specialReady = false;
 
 const keys = { w: false, a: false, s: false, d: false, space: false };
 
@@ -55,6 +75,41 @@ let restartCountdownTimer = null;
 // latency when the state broadcast echoes our own position back to us.
 let lastSentX = 0;
 let lastSentZ = 0;
+
+// Paints the desktop charge ring (mobile's equivalent lives on the shove
+// button itself, see touchControls.js#setShoveChargeProgress). progress <= 0
+// hides it entirely.
+function updateChargeUI(progress) {
+  if (isTouchDevice()) {
+    setShoveChargeProgress(progress);
+    return;
+  }
+  if (!desktopChargeRing) return;
+  if (progress > 0) {
+    desktopChargeRing.style.display = 'block';
+    desktopChargeFill.style.background = `conic-gradient(#ffcc33 ${progress * 360}deg, transparent 0)`;
+  } else {
+    desktopChargeRing.style.display = 'none';
+  }
+}
+
+// Single source of truth for the special-power meter: the 3 pips, the hint
+// text (device-aware — "press Q" vs "tap"), and the ready-state glow. Also
+// flips the mobile special button between dim/inert and glowing/tappable.
+function updateSpecialUI(count, threshold, ready) {
+  specialReady = ready;
+  specialPipEls.forEach((pip, i) => pip.classList.toggle('filled', i < count));
+  specialMeterEl?.classList.toggle('ready', ready);
+  if (specialHintEl) {
+    if (ready) {
+      specialHintEl.textContent = isTouchDevice() ? 'SPECIAL READY — tap the kick button!' : 'SPECIAL READY — press Q!';
+    } else {
+      const remaining = threshold - count;
+      specialHintEl.textContent = `Land ${remaining} more charged shove${remaining === 1 ? '' : 's'}`;
+    }
+  }
+  setSpecialReady(ready);
+}
 
 function showBanner(text, sub = '') {
   banner.textContent = '';
@@ -106,12 +161,14 @@ function startGame(name) {
     controlsHint.style.display = 'block';
     if (mouseLookHint) mouseLookHint.style.display = 'block';
   }
+  if (specialMeterEl) specialMeterEl.style.display = 'block';
+  updateSpecialUI(0, SPECIAL_POWER_THRESHOLD, false);
 
   canvas = document.createElement('canvas');
   document.getElementById('app').prepend(canvas);
 
   sceneManager = new SceneManager(canvas);
-  remotePlayers = new RemotePlayers(sceneManager.scene);
+  remotePlayers = new RemotePlayers(sceneManager.scene, (pos, color) => sceneManager.spawnDeathEffect(pos, color));
   network = new Network();
 
   network.connect(name, {
@@ -121,6 +178,7 @@ function startGame(name) {
       mapNameEl.textContent = `Map: ${data.map.name}`;
 
       const self = data.players.find(p => p.id === selfId);
+      selfColor = self.color;
       localPlayer = new LocalPlayer(name, self.color, sceneManager.scene);
       localPlayer.setArenaRadius(data.map.radius);
       localPlayer.respawn(self.x, self.z, self.rotY);
@@ -147,17 +205,30 @@ function startGame(name) {
         localPlayer.applyServerCorrection(self.x, self.z, lastSentX, lastSentZ);
       }
     },
-    onShoveAction: (playerId) => {
-      if (playerId === selfId) localPlayer?.playPunch();
-      else remotePlayers.playPunch(playerId);
+    onShoveAction: ({ playerId, power }) => {
+      if (playerId === selfId) localPlayer?.playPunch(power);
+      else remotePlayers.playPunch(playerId, power);
+
+      if (power && power !== 'normal') {
+        const pos = playerId === selfId ? localPlayer?.avatar.group.position : remotePlayers.getPosition(playerId);
+        if (pos) {
+          sceneManager.spawnShockwave(pos, power === 'special'
+            ? { color: 0x66e0ff, scaleMult: 1.7, duration: 0.6 }
+            : { color: 0xffcc33, scaleMult: 1, duration: 0.45 });
+        }
+      }
     },
     onShoveHit: (data) => {
       if (data.targetId === selfId && localPlayer) {
         localPlayer.applyKnockback(data.dirX, data.dirZ, data.force, data.upForce);
+        if (data.power === 'charged') sceneManager.shake(0.25, 250);
+        else if (data.power === 'special') sceneManager.shake(0.45, 400);
       }
     },
+    onSpecialProgress: ({ count, threshold, ready }) => updateSpecialUI(count, threshold, ready),
     onEliminated: (id) => {
       if (id === selfId) {
+        sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
         localPlayer.setAlive(false);
         controlsEnabled = false;
         showBanner('You were eliminated', 'Spectating — next round starts soon');
@@ -202,23 +273,27 @@ function setupInput() {
   // All keys are independent booleans, so holding several at once (W+D
   // diagonal, W+Space, W+F, ...) just works — nothing here treats inputs
   // as mutually exclusive.
+  // Arrow keys are plain aliases for WASD (same booleans, so W+ArrowRight
+  // held together just behaves like W+D — nothing treats them separately).
   window.addEventListener('keydown', (e) => {
     switch (e.code) {
-      case 'KeyW': keys.w = true; break;
-      case 'KeyA': keys.a = true; break;
-      case 'KeyS': keys.s = true; break;
-      case 'KeyD': keys.d = true; break;
+      case 'KeyW': case 'ArrowUp': keys.w = true; break;
+      case 'KeyA': case 'ArrowLeft': keys.a = true; break;
+      case 'KeyS': case 'ArrowDown': keys.s = true; break;
+      case 'KeyD': case 'ArrowRight': keys.d = true; break;
       case 'Space': keys.space = true; e.preventDefault(); break;
-      case 'KeyF': tryShove(); break;
+      case 'KeyF': if (!e.repeat) onShovePress(); break;
+      case 'KeyQ': if (!e.repeat) fireSpecial(); break;
     }
   });
   window.addEventListener('keyup', (e) => {
     switch (e.code) {
-      case 'KeyW': keys.w = false; break;
-      case 'KeyA': keys.a = false; break;
-      case 'KeyS': keys.s = false; break;
-      case 'KeyD': keys.d = false; break;
+      case 'KeyW': case 'ArrowUp': keys.w = false; break;
+      case 'KeyA': case 'ArrowLeft': keys.a = false; break;
+      case 'KeyS': case 'ArrowDown': keys.s = false; break;
+      case 'KeyD': case 'ArrowRight': keys.d = false; break;
       case 'Space': keys.space = false; break;
+      case 'KeyF': onShoveRelease(); break;
     }
   });
 
@@ -226,25 +301,43 @@ function setupInput() {
     // Pointer Lock isn't usable on touch (notably unsupported on iOS
     // Safari), so skip the click-to-lock/mousemove wiring entirely rather
     // than relying on it to silently no-op. Touch input drives the same
-    // keys/cameraYaw/cameraPitch/tryShove through initTouchControls.
+    // keys/cameraYaw/cameraPitch/shove state machine through initTouchControls.
     initTouchControls({
       keys,
-      tryShove,
+      onShovePress,
+      onShoveRelease,
+      onSpecialTrigger: fireSpecial,
       applyLookDelta: (dx, dy) => applyMouseLookDelta(dx, dy, TOUCH_LOOK_SENSITIVITY)
     });
     showTouchControls();
     return;
   }
 
-  // Mouse-look via the Pointer Lock API: click the canvas to lock the
-  // cursor, then raw mouse movement drives camera yaw/pitch until Escape
-  // (or an unlock event) releases it again.
-  canvas.addEventListener('click', () => {
-    if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+  // Mouse-look via the Pointer Lock API: the first click just locks the
+  // cursor (a browser requirement — requestPointerLock must run inside a
+  // user-gesture handler); once locked, the same buttons double as the F/Q
+  // aliases below. Raw mouse movement then drives camera yaw/pitch until
+  // Escape (or an unlock event) releases it again.
+  canvas.addEventListener('mousedown', (e) => {
+    if (document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock();
+      return;
+    }
+    if (e.button === 0) onShovePress();       // left click == F (hold to charge)
+    else if (e.button === 2) fireSpecial();   // right click == Q (special kick)
   });
+  canvas.addEventListener('mouseup', (e) => {
+    if (e.button === 0) onShoveRelease();
+  });
+  // Right-click is a real game action here, not a context-menu trigger.
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === canvas;
     if (mouseLookHint) mouseLookHint.style.display = locked ? 'none' : 'block';
+    // Escape (or any other pointer-lock loss) can happen mid-hold with no
+    // guaranteed mouseup to follow — release explicitly so a charge never
+    // gets stuck mid-bar.
+    if (!locked) onShoveRelease();
   });
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement !== canvas) return;
@@ -263,12 +356,47 @@ function applyMouseLookDelta(dx, dy, sensitivity) {
   cameraPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, cameraPitch));
 }
 
-function tryShove() {
-  if (!controlsEnabled || !localPlayer?.alive) return;
+// Sends a shove if the cooldown allows it. Returns whether it actually
+// fired, so callers (the charge loop especially) know whether to advance
+// their own state or keep waiting.
+function fireShove(power) {
+  if (!controlsEnabled || !localPlayer?.alive) return false;
   const now = performance.now();
-  if (now - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
+  if (now - lastShoveClientTime < SHOVE_COOLDOWN_MS) return false;
   lastShoveClientTime = now;
-  network.sendShove();
+  network.sendShove(power);
+  return true;
+}
+
+// Press: start charging (unless already on cooldown, in which case this
+// hold does nothing — matches a tap's existing silent-no-op-on-cooldown
+// behavior). The loop() below advances the charge and auto-fires a
+// 'charged' shove once CHARGE_HOLD_MS is reached.
+function onShovePress() {
+  if (fShoveHeld) return;
+  fShoveHeld = true;
+  if (!controlsEnabled || !localPlayer?.alive) return;
+  if (performance.now() - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
+  chargeStartTime = performance.now();
+}
+
+// Release: a quick tap (released before the charge threshold) fires a
+// normal shove. A hold that already reached the threshold fired its
+// 'charged' shove inside loop() already, so there's nothing left to do here
+// but clear the charge state/UI.
+function onShoveRelease() {
+  if (!fShoveHeld) return;
+  fShoveHeld = false;
+  if (chargeStartTime !== null && performance.now() - chargeStartTime < CHARGE_HOLD_MS) {
+    fireShove('normal');
+  }
+  chargeStartTime = null;
+  updateChargeUI(0);
+}
+
+function fireSpecial() {
+  if (!specialReady) return;
+  fireShove('special');
 }
 
 let lastTime = performance.now();
@@ -311,7 +439,25 @@ function loop(now) {
     }
   }
 
+  // Advance the shove charge while held. Reaching CHARGE_HOLD_MS auto-fires
+  // a 'charged' shove and immediately starts the next cycle (so holding
+  // straight through keeps charging repeatedly); if the fire attempt is
+  // blocked by cooldown, the bar just holds at full until it clears.
+  if (fShoveHeld && chargeStartTime !== null) {
+    if (!controlsEnabled || !localPlayer?.alive) {
+      chargeStartTime = null;
+      updateChargeUI(0);
+    } else {
+      const elapsed = now - chargeStartTime;
+      updateChargeUI(Math.min(1, elapsed / CHARGE_HOLD_MS));
+      if (elapsed >= CHARGE_HOLD_MS && fireShove('charged')) {
+        chargeStartTime = now;
+      }
+    }
+  }
+
   remotePlayers?.tick(dt);
+  sceneManager?.updateEffects(dt);
   sceneManager?.render();
 
   // Read-only debug hook (harmless, no gameplay effect) so external tooling

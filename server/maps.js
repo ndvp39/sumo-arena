@@ -19,6 +19,12 @@
 //   ambientColor  tint of the ambient fill light
 //   emissiveGround  hex color the platform glows, or null for a matte floor
 //   decoration    theme key consumed by scene.js#buildDecorations
+//   liquidColor   hex color of the surface waiting at the bottom of a fall
+//                 (water/lava/etc, see scene.js#buildArena) — so falling off
+//                 the edge always lands in *something* themed, never empty
+//                 void. Falls back to voidColor if omitted.
+//   liquidGlow    true for surfaces that should read as glowing/molten
+//                 rather than a flat reflective liquid (lava, neon goo, ...)
 
 export const MAPS = {
   classic: {
@@ -35,7 +41,9 @@ export const MAPS = {
     lightIntensity: 1.1,
     ambientColor: 0xffffff,
     emissiveGround: null,
-    decoration: 'dohyo'
+    decoration: 'dohyo',
+    liquidColor: 0x1a5a8a,
+    liquidGlow: false
   },
   smallRing: {
     id: 'smallRing',
@@ -51,7 +59,9 @@ export const MAPS = {
     lightIntensity: 1.15,
     ambientColor: 0xffddcc,
     emissiveGround: null,
-    decoration: 'dohyo'
+    decoration: 'dohyo',
+    liquidColor: 0x8a1f1f,
+    liquidGlow: false
   },
   grandArena: {
     id: 'grandArena',
@@ -67,7 +77,9 @@ export const MAPS = {
     lightIntensity: 1.0,
     ambientColor: 0x88aaff,
     emissiveGround: null,
-    decoration: 'pillars'
+    decoration: 'pillars',
+    liquidColor: 0x1144aa,
+    liquidGlow: true
   },
   volcano: {
     id: 'volcano',
@@ -83,7 +95,9 @@ export const MAPS = {
     lightIntensity: 1.3,
     ambientColor: 0xff6633,
     emissiveGround: 0x552200,
-    decoration: 'lava'
+    decoration: 'lava',
+    liquidColor: 0xff5522,
+    liquidGlow: true
   },
   frozen: {
     id: 'frozen',
@@ -99,7 +113,9 @@ export const MAPS = {
     lightIntensity: 1.2,
     ambientColor: 0xbfe6ff,
     emissiveGround: null,
-    decoration: 'ice'
+    decoration: 'ice',
+    liquidColor: 0x88ddff,
+    liquidGlow: false
   },
   neonGrid: {
     id: 'neonGrid',
@@ -115,7 +131,9 @@ export const MAPS = {
     lightIntensity: 0.9,
     ambientColor: 0xff00ff,
     emissiveGround: 0x1a0033,
-    decoration: 'neon'
+    decoration: 'neon',
+    liquidColor: 0x8800cc,
+    liquidGlow: true
   },
   desertMesa: {
     id: 'desertMesa',
@@ -131,7 +149,9 @@ export const MAPS = {
     lightIntensity: 1.35,
     ambientColor: 0xffcc99,
     emissiveGround: null,
-    decoration: 'desert'
+    decoration: 'desert',
+    liquidColor: 0xc9a15a,
+    liquidGlow: false
   },
   deepSpace: {
     id: 'deepSpace',
@@ -147,7 +167,9 @@ export const MAPS = {
     lightIntensity: 1.0,
     ambientColor: 0x334466,
     emissiveGround: null,
-    decoration: 'space'
+    decoration: 'space',
+    liquidColor: 0x221144,
+    liquidGlow: true
   },
   skyTemple: {
     id: 'skyTemple',
@@ -163,7 +185,9 @@ export const MAPS = {
     lightIntensity: 1.2,
     ambientColor: 0xccaaff,
     emissiveGround: 0x2a1f10,
-    decoration: 'skytemple'
+    decoration: 'skytemple',
+    liquidColor: 0xffcc66,
+    liquidGlow: true
   }
 };
 

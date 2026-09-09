@@ -5,8 +5,13 @@ import { REMOTE_LERP_FACTOR } from './constants.js';
 // toward the latest server snapshot each frame (so movement doesn't
 // stutter between the ~20-30Hz network updates), and remote animations.
 export class RemotePlayers {
-  constructor(scene) {
+  // onEliminated(position, color): optional callback fired the moment a
+  // tracked remote player's alive flag flips true -> false, so main.js can
+  // trigger the death effect (blood splat/limb pop) without RemotePlayers
+  // needing to know anything about SceneManager itself.
+  constructor(scene, onEliminated) {
     this.scene = scene;
+    this.onEliminated = onEliminated;
     this.map = new Map(); // id -> { avatar, target: {x,y,z,rotY}, alive }
   }
 
@@ -46,13 +51,22 @@ export class RemotePlayers {
       entry.target.y = p.y;
       entry.target.z = p.z;
       entry.target.rotY = p.rotY;
+
+      const wasAlive = entry.alive;
       entry.alive = p.alive;
+      if (wasAlive && !p.alive) {
+        this.onEliminated?.(entry.avatar.group.position, p.color);
+      }
     }
   }
 
-  playPunch(id) {
+  playPunch(id, power = 'normal') {
     const entry = this.map.get(id);
-    if (entry) triggerPunch(entry.avatar, performance.now());
+    if (entry) triggerPunch(entry.avatar, performance.now(), power);
+  }
+
+  getPosition(id) {
+    return this.map.get(id)?.avatar.group.position ?? null;
   }
 
   respawnAll(players, selfId) {

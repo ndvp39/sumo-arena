@@ -16,15 +16,30 @@ export const GRAVITY = 20;
 export const JUMP_SPEED = 8;
 export const MOVE_SPEED = 5;
 
-// Generous on purpose: reach is measured center-to-center (players are
-// PLAYER_RADIUS=0.5 each, arms visually extend further), and the pusher's
-// own server-side position can lag their true position by up to one
-// network tick (~50ms at 20Hz) at the moment they press F. A tight range
-// made shoves that looked like a clean hit silently fail.
-export const SHOVE_RANGE = 2.6; // omnidirectional — no facing/cone check, see GameRoom#handleShove
-export const SHOVE_FORCE = 11;
-export const SHOVE_UP_FORCE = 3.5;
+// Arm length, mirrored from client/src/avatar.js's arm geometry
+// (BoxGeometry(0.18, 0.6, 0.18) swung ~horizontal) — this is how far a hand
+// actually reaches past the shoulder. Reach is measured center-to-center,
+// so a hit requires the pusher's own body radius + the arm's reach to span
+// the gap up to the target's body radius: anything past that is genuinely
+// out of arm's reach and must NOT land, even if it looks "close enough."
+export const ARM_REACH = 0.6;
+export const SHOVE_RANGE = PLAYER_RADIUS * 2 + ARM_REACH; // omnidirectional — no facing/cone check, see GameRoom#handleShove
+export const SHOVE_FORCE = 16;
+export const SHOVE_UP_FORCE = 5;
+// A charged shove (2s hold, see CHARGE_HOLD_MS on the client) hits at the
+// same range but lands much harder, as a payoff for the wind-up.
+export const CHARGED_SHOVE_FORCE = 30;
+export const CHARGED_SHOVE_UP_FORCE = 9;
 export const SHOVE_COOLDOWN_MS = 650;
+
+// Special power: land this many charged shoves (see GameRoom#handleShove)
+// and the next shove input unleashes a two-legged flying kick instead — a
+// bigger lunge with much bigger payoff. Slightly longer reach than a normal
+// shove (it's a lunging kick, not a stationary push).
+export const SPECIAL_POWER_THRESHOLD = 3;
+export const SPECIAL_KICK_RANGE = SHOVE_RANGE + 0.6;
+export const SPECIAL_KICK_FORCE = 46;
+export const SPECIAL_KICK_UP_FORCE = 13;
 
 export const TICK_RATE_HZ = 30;
 export const ROUND_RESTART_DELAY_MS = 5000;

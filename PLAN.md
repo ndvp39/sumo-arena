@@ -316,3 +316,119 @@ lag-free feel:
 - Network tick rates (20Hz client→server, 30Hz server→clients) were left
   as-is — already reasonable for this player count; not worth raising
   without evidence they're the actual bottleneck.
+
+## 12. Shove rework: exact reach, charged hold, and a special combo kick
+
+**Exact-reach fix.** `SHOVE_RANGE` was `2.6`, well past what the avatar's arm
+geometry could plausibly cover — shoves were landing on targets that visibly
+weren't in arm's reach. Replaced with a value derived directly from the
+avatar's own geometry: `SHOVE_RANGE = PLAYER_RADIUS * 2 + ARM_REACH` (`0.5*2 +
+0.6 = 1.6`), where `ARM_REACH` mirrors the arm's actual length in
+`client/src/avatar.js`. Base force also raised (`SHOVE_FORCE` 11→16,
+`SHOVE_UP_FORCE` 3.5→5). Verified with a raw-socket test: a target at
+distance 1.5 (within range) took the hit, an otherwise-identical target at
+1.8 (within the old range, outside the new one) did not.
+
+**Charged shove (hold 2s).** Holding the shove input — F on desktop, the
+SHOVE button on mobile — for `CHARGE_HOLD_MS` (2000ms) fires a much harder
+shove (`CHARGED_SHOVE_FORCE`/`CHARGED_SHOVE_UP_FORCE`, ~2x base) instead of a
+tap's normal one; releasing early just fires a normal shove. Both input
+paths share one state machine in `main.js` (`onShovePress`/`onShoveRelease`/
+the per-frame charge tick in `loop()`) — `touchControls.js` only forwards raw
+press/release, it doesn't own any timing. Progress renders as a radial
+"circle bar": the mobile SHOVE button fills via a `conic-gradient`
+(`touchControls.js#setShoveChargeProgress`), desktop gets an equivalent ring
+near the bottom of the screen (`#desktopChargeRing`). Landing a charged hit
+also pulses a gold emissive glow on the puncher's arms and drops a brief
+expanding shockwave ring at the point of impact
+(`scene.js#spawnShockwave`/`updateEffects`), visible to every client, not
+just the two players involved.
+
+**Special power: two-legged kick.** Landing `SPECIAL_POWER_THRESHOLD` (3)
+charged shoves — tracked server-side per player as `chargedHitStreak`, only
+incremented on an actual landed hit — unlocks one use of a "special": a
+two-legged flying kick (`GameRoom#handleShove` power `'special'`) with a
+longer lunge range (`SPECIAL_KICK_RANGE = SHOVE_RANGE + 0.6`) and much
+bigger force/upward force than even a charged shove. The server is
+authoritative for eligibility (`pusher.specialReady`, reset to false the
+moment it's spent or a round restarts) — the client's own gating is
+UI-only, purely so the button/prompt doesn't invite a wasted tap.
+
+Progress is pushed to just the earning player via a targeted
+`specialProgress` event (`io.to(id).emit(...)`, using each socket's implicit
+own-id room) and rendered as an always-visible top-of-screen pip meter
+(`#specialMeter`, 3 dots that fill gold as hits land) with a hint line that
+switches from "Land N more charged shoves" to a pulsing "SPECIAL READY —
+press Q!" / "...tap the kick button!" once earned — so the mechanic and its
+cost are visible to everyone playing, not just discoverable by accident.
+Desktop triggers it with Q; mobile gets a dedicated `#touchSpecialBtn` that's
+dim and untappable (`pointer-events: none`) until ready, then glows and
+pulses. On landing, both arms swing back and both legs kick forward together
+(`avatar.js`'s `leftLegPivot`/`rightLegPivot`, added alongside the existing
+arm pivots), the limbs glow cyan instead of gold, the impact shockwave is
+bigger, and the target's client gets a stronger camera shake
+(`sceneManager.shake`) than a charged hit produces.
+
+Verified end-to-end with a raw-socket test script driving two clients: a
+shove at exact range lands and one just past the new tighter range doesn't;
+three landed charged shoves (bigger force each time) produce
+`specialProgress` events counting `1/3`, `2/3`, then `ready: true`; firing
+`special` at that point lands with the biggest force of the three tiers and
+immediately resets progress to `0/3, ready: false`; and a second attempt to
+fire `special` without re-earning it is silently rejected server-side (no
+`shoveHit` emitted).
+
+## 13. Mouse/arrow control parity and themed falls
+
+**Mouse as an alias for F/Q.** Left click now does everything F does
+(hold-to-charge included) and right click does everything Q does, sharing
+the exact same `onShovePress`/`onShoveRelease`/`fireSpecial` functions in
+`main.js` as the keyboard — there's no separate mouse-only code path to
+drift out of sync. The first click on the canvas still only engages Pointer
+Lock (a browser requirement, and avoids an accidental shove firing the
+instant someone clicks to start playing); once locked, the same
+`mousedown`/`mouseup` pair drives the action. `contextmenu` is suppressed on
+the canvas so right-click behaves as a game input, not a browser menu.
+Losing pointer lock mid-hold (Escape, or any other cause) now explicitly
+calls `onShoveRelease()` from the `pointerlockchange` handler, so a charge
+can never get stuck mid-bar with no matching `mouseup` to close it out.
+
+**Arrow keys.** `ArrowUp/Down/Left/Right` are plain aliases for `W/A/S/D` in
+the same `keydown`/`keyup` switch — they set the exact same boolean flags,
+so every existing guarantee about simultaneous input (diagonals, move+jump,
+move+shove, ...) already covers them for free.
+
+**Something under every map.** The flat void floor (a fixed dark disc at
+y=-6, purely decorative) is now a themed liquid surface per map —
+`maps.js#liquidColor`/`liquidGlow` (water, lava, neon goo, quicksand, ...) —
+rendered with transparency and, for the glowing themes, emissive intensity
+so it reads as a real surface rather than a color fill. It's now positioned
+at `VOID_SURFACE_Y = -13` (`scene.js`), just above the server's
+`ELIMINATION_Y = -14`, so a falling player visually plunges into it right
+around the moment they're actually eliminated — previously the two values
+(-6 decorative floor vs. -14 elimination) didn't line up at all. Volcano's
+existing lava-pool decoration prop, which was pinned to the old -6, moved
+down to sit on the new surface instead of floating in mid-air above it.
+
+**Death effect.** The moment a player is eliminated (`scene.js#
+spawnDeathEffect`, wired from `main.js`'s `onEliminated` for the local
+player and a new `RemotePlayers` `onEliminated(position, color)` callback —
+fired on an alive-flag `true -> false` transition — for everyone else), a
+stylized "ragdoll gib" plays: a burst of small red splat blobs plus five
+blocky limb/head chunks (two in the player's own torso color, three in the
+avatar's skin tone) fly outward and tumble away under gravity before
+fading, and a pale splash ring marks the surface itself — reusing the same
+`spawnShockwave` ring effect as a charged/special hit, just retinted.
+Deliberately cartoonish (primitive geometry, flat colors, ~1s fade) rather
+than graphic. Fixed `spawnShockwave` to place its ring at the given
+position's own Y instead of a flat `0.05` while making this change — it
+had been hardcoded assuming shoves only ever happen near platform height,
+which broke the moment it was reused for a splash down at the liquid
+surface.
+
+Verified: syntax-checked every touched file, confirmed via a raw-socket
+client that the server's `init` payload now includes `liquidColor`/
+`liquidGlow` per map, and manually re-derived the debris/splash trigger
+paths for both the local-player and remote-player cases since this needed
+a live two-headset session (one falling, one watching) to see rendered,
+which wasn't available in this pass.

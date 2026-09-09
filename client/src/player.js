@@ -33,8 +33,8 @@ export class LocalPlayer {
     this.grounded = false;
   }
 
-  playPunch() {
-    triggerPunch(this.avatar, performance.now());
+  playPunch(power = 'normal') {
+    triggerPunch(this.avatar, performance.now(), power);
   }
 
   setAlive(alive) {

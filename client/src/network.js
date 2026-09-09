@@ -25,8 +25,9 @@ export class Network {
     this.socket.on('playerJoined', (p) => handlers.onPlayerJoined?.(p));
     this.socket.on('playerLeft', ({ id }) => handlers.onPlayerLeft?.(id));
     this.socket.on('state', ({ players }) => handlers.onState?.(players));
-    this.socket.on('shoveAction', ({ playerId }) => handlers.onShoveAction?.(playerId));
+    this.socket.on('shoveAction', (data) => handlers.onShoveAction?.(data));
     this.socket.on('shoveHit', (data) => handlers.onShoveHit?.(data));
+    this.socket.on('specialProgress', (data) => handlers.onSpecialProgress?.(data));
     this.socket.on('playerEliminated', ({ id }) => handlers.onEliminated?.(id));
     this.socket.on('roundOver', (data) => handlers.onRoundOver?.(data));
     this.socket.on('roundStart', (data) => handlers.onRoundStart?.(data));
@@ -38,8 +39,9 @@ export class Network {
     this.socket.emit('move', transform);
   }
 
-  sendShove() {
+  // power: 'normal' | 'charged' | 'special'
+  sendShove(power = 'normal') {
     if (!this.socket?.connected) return;
-    this.socket.emit('shove');
+    this.socket.emit('shove', { power });
   }
 }

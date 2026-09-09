@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 
+// Just above the server's ELIMINATION_Y (-14, see server/constants.js) so a
+// falling player visually plunges into the themed liquid surface right
+// around the moment they're actually eliminated, instead of vanishing 8
+// units above or below it.
+const VOID_SURFACE_Y = -13;
+// Debris/blood-splat palette — SKIN_TONE mirrors avatar.js's skin material
+// color so the "limbs" popping off read as the same character.
+const SKIN_TONE = 0xf0c8a0;
+const BLOOD_COLOR = 0xdd2222;
+
 // Owns the renderer, camera, lighting, and the arena mesh. The arena is
 // rebuilt on demand from a map config object sent by the server — there is
 // no hardcoded arena here, so any map the server knows about (radius, ring
@@ -26,7 +36,115 @@ export class SceneManager {
 
     this._desiredCamPos = new THREE.Vector3(); // reused each frame — avoid per-frame GC churn
 
+    this.effects = []; // transient one-shot visuals (shockwave rings, ...), see spawnShockwave/updateEffects
+    this._shakeTime = 0;
+    this._shakeMag = 0;
+
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  // A brief expanding, fading ring dropped at a charged/special shove's
+  // origin — the "some effect" payoff that reads clearly to every client
+  // watching, not just the two players involved.
+  spawnShockwave(position, { color = 0xffcc33, scaleMult = 1, duration = 0.45 } = {}) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.3, 0.5, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    // Offset from the given position's own Y (not a flat 0.05) so this
+    // still lands correctly whether it's a shove on the platform (y ~ 0) or
+    // spawnDeathEffect's splash down at the liquid surface (y ~ -13).
+    ring.position.set(position.x, position.y + 0.05, position.z);
+    this.scene.add(ring);
+    this.effects.push({ type: 'ring', mesh: ring, age: 0, duration, scaleMult });
+  }
+
+  // The comic "ragdoll gib" beat for an elimination: a burst of small red
+  // splat blobs plus a handful of blocky limb/head chunks (torso-colored and
+  // skin-toned, echoing the avatar's own materials) fly outward and tumble
+  // away under gravity, alongside a themed splash ring at the liquid surface
+  // they land in. Deliberately stylized/cartoonish (primitive geometry,
+  // bright flat colors, quick fade) rather than graphic.
+  spawnDeathEffect(position, playerColor) {
+    const debrisSpecs = [
+      // 10 small blood-red splat blobs
+      ...Array.from({ length: 10 }, () => ({
+        geometry: new THREE.SphereGeometry(0.05 + Math.random() * 0.06, 6, 6),
+        color: BLOOD_COLOR,
+        duration: 0.9
+      })),
+      // 5 blocky limb/head chunks — 2 torso-colored, 3 skin-toned
+      ...['torso', 'torso', 'skin', 'skin', 'skin'].map((kind) => {
+        const size = 0.12 + Math.random() * 0.1;
+        return {
+          geometry: new THREE.BoxGeometry(size, size * 1.6, size),
+          color: kind === 'torso' ? playerColor : SKIN_TONE,
+          duration: 1.2
+        };
+      })
+    ];
+
+    for (const spec of debrisSpecs) {
+      const mesh = new THREE.Mesh(
+        spec.geometry,
+        new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.7, transparent: true, opacity: 1 })
+      );
+      mesh.position.set(position.x, position.y + 0.9, position.z);
+      this.scene.add(mesh);
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.5 + Math.random() * 3;
+      this.effects.push({
+        type: 'debris',
+        mesh,
+        age: 0,
+        duration: spec.duration,
+        velocity: new THREE.Vector3(Math.cos(angle) * speed, 2.5 + Math.random() * 2.5, Math.sin(angle) * speed),
+        angularVelX: (Math.random() - 0.5) * 14,
+        angularVelZ: (Math.random() - 0.5) * 14
+      });
+    }
+
+    // Splash ring at the surface itself — same visual language as a shove's
+    // shockwave, tinted pale blue/white to read as "hit the liquid."
+    this.spawnShockwave(position, { color: 0xdfefff, scaleMult: 1.3, duration: 0.5 });
+  }
+
+  updateEffects(dt) {
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      const fx = this.effects[i];
+      fx.age += dt;
+      const t = Math.min(1, fx.age / fx.duration);
+
+      if (fx.type === 'debris') {
+        fx.velocity.y -= 20 * dt; // gravity, matches GRAVITY in constants.js
+        fx.mesh.position.addScaledVector(fx.velocity, dt);
+        fx.mesh.rotation.x += fx.angularVelX * dt;
+        fx.mesh.rotation.z += fx.angularVelZ * dt;
+        fx.mesh.material.opacity = 1 - t;
+      } else {
+        const scale = 1 + t * 4 * fx.scaleMult;
+        fx.mesh.scale.set(scale, scale, scale);
+        fx.mesh.material.opacity = 0.9 * (1 - t);
+      }
+
+      if (t >= 1) {
+        this.scene.remove(fx.mesh);
+        fx.mesh.geometry.dispose();
+        fx.mesh.material.dispose();
+        this.effects.splice(i, 1);
+      }
+    }
+  }
+
+  // Brief camera jitter on impact, felt only by whoever got hit. Self-
+  // correcting: updateCamera's lerp toward the real desired position each
+  // frame naturally pulls any accumulated offset back in, so this never
+  // needs its own decay/restore step.
+  shake(magnitude, durationMs) {
+    this._shakeMag = magnitude;
+    this._shakeTime = durationMs / 1000;
   }
 
   _setupLighting() {
@@ -100,12 +218,27 @@ export class SceneManager {
     ring.position.y = 0.02;
     this.arenaGroup.add(ring);
 
+    // A themed surface waiting at the bottom of a fall (water/lava/goo/...,
+    // see maps.js#liquidColor) instead of an empty void — so falling off the
+    // edge always lands in *something* recognizable. Positioned just above
+    // VOID_SURFACE_Y's fall-hits-bottom moment (see spawnDeathEffect), not
+    // at the old purely-decorative -6, so the splash actually lines up with
+    // where a falling player visually disappears.
+    const liquidColor = map.liquidColor ?? map.voidColor;
     const voidFloor = new THREE.Mesh(
       new THREE.CircleGeometry(map.radius * 4, 48),
-      new THREE.MeshStandardMaterial({ color: map.voidColor, roughness: 1 })
+      new THREE.MeshStandardMaterial({
+        color: liquidColor,
+        roughness: map.liquidGlow ? 0.5 : 0.15,
+        metalness: map.liquidGlow ? 0 : 0.2,
+        transparent: true,
+        opacity: 0.9,
+        emissive: map.liquidGlow ? liquidColor : 0x000000,
+        emissiveIntensity: map.liquidGlow ? 0.5 : 0
+      })
     );
     voidFloor.rotation.x = -Math.PI / 2;
-    voidFloor.position.y = -6;
+    voidFloor.position.y = VOID_SURFACE_Y;
     this.arenaGroup.add(voidFloor);
 
     this.scene.fog.color.set(map.voidColor);
@@ -198,7 +331,7 @@ export class SceneManager {
         new THREE.MeshStandardMaterial({ color: 0xff4400, emissive: 0xff5500, emissiveIntensity: 1.1, roughness: 0.6 })
       );
       pool.rotation.x = -Math.PI / 2;
-      pool.position.y = -5.98;
+      pool.position.y = VOID_SURFACE_Y + 0.02; // just above the liquid surface, not the old fixed -6
       return pool;
     });
   }
@@ -380,6 +513,13 @@ export class SceneManager {
     );
     const alpha = 1 - Math.pow(0.0001, dt);
     this.camera.position.lerp(this._desiredCamPos, alpha);
+
+    if (this._shakeTime > 0) {
+      this._shakeTime = Math.max(0, this._shakeTime - dt);
+      this.camera.position.x += (Math.random() - 0.5) * this._shakeMag;
+      this.camera.position.y += (Math.random() - 0.5) * this._shakeMag;
+    }
+
     this.camera.lookAt(targetPos.x, targetPos.y + 1.2, targetPos.z);
   }
 
