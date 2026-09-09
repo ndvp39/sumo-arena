@@ -107,6 +107,18 @@
       pointer-events: none;
       z-index: 50;
     }
+    /* Maximally bulletproof visibility test: fixed positioning (no
+       dependency on any ancestor), max-safe z-index, huge solid color.
+       If this doesn't show while charging, the issue isn't the ring's own
+       CSS/positioning at all - something more fundamental is going on. */
+    #bruteForceFlash {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #ff00ff;
+      z-index: 2147483647;
+      pointer-events: none;
+    }
 
     #mouseLookHint {
       position: absolute;
@@ -379,6 +391,7 @@
     </div>
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
     <div id="debugOverlay"></div>
+    <div id="bruteForceFlash"></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -390,7 +403,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.10</div>
+    <div id="versionTag">v1.11</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

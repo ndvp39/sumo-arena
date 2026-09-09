@@ -23,6 +23,7 @@ const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
 const debugOverlay = document.getElementById('debugOverlay');
+const bruteForceFlash = document.getElementById('bruteForceFlash');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -91,6 +92,10 @@ let lastSentZ = 0;
 // invisible regardless of what its fill color is set to.
 function updateChargeUI(progress) {
   setShoveChargeProgress(progress);
+  // Bulletproof visibility test — see #bruteForceFlash in index.html. If
+  // this full-screen fixed-position flash doesn't show while charging
+  // either, the problem isn't the ring's own CSS/stacking at all.
+  if (bruteForceFlash) bruteForceFlash.style.display = progress > 0 ? 'block' : 'none';
   if (!desktopChargeRing) return;
   if (progress > 0) {
     desktopChargeRing.style.display = 'block';
