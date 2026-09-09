@@ -64,6 +64,24 @@
       line-height: 1.6;
       text-align: right;
     }
+    /* Temporary diagnostic readout — shows the exact elapsed/power for the
+       last shove release. See main.js#onShoveRelease. Remove once the
+       "release at full still fires normal" investigation is resolved. */
+    #shoveDebug {
+      display: none;
+      position: fixed;
+      top: 210px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      color: #ffcc33;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      z-index: 50;
+      pointer-events: none;
+      white-space: pre;
+    }
     /* Anchored near the top, clear of screen-center, on purpose: this
        banner covers "You were eliminated" while the local player's own
        death (fall/blood/limb-pop effect) is still playing out right where
@@ -369,6 +387,7 @@
       <div id="specialHint">Land 3 charged shoves</div>
     </div>
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
+    <div id="shoveDebug"></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -380,7 +399,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.15</div>
+    <div id="versionTag">v1.16</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

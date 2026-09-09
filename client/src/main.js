@@ -22,6 +22,7 @@ const specialPipEls = specialMeterEl ? [...specialMeterEl.querySelectorAll('.pip
 const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
+const shoveDebugEl = document.getElementById('shoveDebug');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -372,6 +373,14 @@ function fireShove(power) {
   network.sendShove(power);
 }
 
+// Temporary diagnostic: counts how many times chargeStartTime actually gets
+// (re)set within a single press-to-release window. Should always be
+// exactly 1 for one continuous hold — if it's ever >1, something (pointer
+// lock loss, a duplicate press event, ...) is silently restarting the
+// timer mid-hold, which would explain "release at full still fires
+// normal" without any bug in the release-time comparison itself.
+let chargeStartCount = 0;
+
 // Press: start charging (unless already on cooldown, in which case this
 // hold does nothing — matches a tap's existing silent-no-op-on-cooldown
 // behavior). The loop() below advances the charge bar toward full but does
@@ -382,6 +391,7 @@ function onShovePress() {
   if (!controlsEnabled || !localPlayer?.alive) return;
   if (performance.now() - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
   chargeStartTime = performance.now();
+  chargeStartCount++;
 }
 
 // A ring at ~98% is visually indistinguishable from 100% (a 353°-drawn
@@ -402,7 +412,22 @@ function onShoveRelease() {
   fShoveHeld = false;
   if (chargeStartTime !== null) {
     const elapsed = performance.now() - chargeStartTime;
-    fireShove(elapsed >= CHARGE_HOLD_MS - CHARGE_FIRE_GRACE_MS ? 'charged' : 'normal');
+    const power = elapsed >= CHARGE_HOLD_MS - CHARGE_FIRE_GRACE_MS ? 'charged' : 'normal';
+    fireShove(power);
+    // Temporary diagnostic: show the exact numbers behind this decision,
+    // including how many times the timer was (re)started this hold.
+    if (shoveDebugEl) {
+      shoveDebugEl.textContent = `elapsed: ${Math.round(elapsed)}ms -> ${power} (starts: ${chargeStartCount})`;
+      shoveDebugEl.style.display = 'block';
+      clearTimeout(shoveDebugEl._hideTimer);
+      shoveDebugEl._hideTimer = setTimeout(() => { shoveDebugEl.style.display = 'none'; }, 4000);
+    }
+    chargeStartCount = 0;
+  } else if (shoveDebugEl) {
+    shoveDebugEl.textContent = 'released with chargeStartTime=null (charging never started)';
+    shoveDebugEl.style.display = 'block';
+    clearTimeout(shoveDebugEl._hideTimer);
+    shoveDebugEl._hideTimer = setTimeout(() => { shoveDebugEl.style.display = 'none'; }, 4000);
   }
   chargeStartTime = null;
   updateChargeUI(0);
