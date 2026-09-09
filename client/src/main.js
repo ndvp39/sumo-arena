@@ -468,7 +468,11 @@ function loop(now) {
 
   // Read-only debug hook (harmless, no gameplay effect) so external tooling
   // can inspect ground-truth camera/player state instead of guessing it.
-  window.__debug = { cameraYaw, cameraPitch, position: localPlayer?.position, alive: localPlayer?.alive };
+  window.__debug = {
+    cameraYaw, cameraPitch, position: localPlayer?.position, alive: localPlayer?.alive,
+    controlsEnabled, fShoveHeld, chargeStartTime, specialReady,
+    hasDesktopChargeRing: !!desktopChargeRing, isTouchDevice: isTouchDevice()
+  };
 }
 
 // Phones reserve on-screen space for the browser's address bar unless the
