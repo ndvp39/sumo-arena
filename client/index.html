@@ -30,8 +30,21 @@
     #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
     canvas { display: block; }
 
+    /* Every HUD/overlay element below is intentionally `position: fixed`,
+       anchored to the real viewport, NOT `position: absolute` inside #app.
+       Diagnosed via a live production report: on at least one real
+       browser, #app's computed height (driven by 100vh/100dvh) resolves
+       far smaller than the actual viewport, so any `position:absolute`
+       child anchored from the bottom with a large-enough offset (or
+       height) gets pushed above the top of the page — invisible, with no
+       way to scroll to it (body has overflow:hidden). A tiny bottom offset
+       (like the old version tag) could still coincidentally land on
+       screen, which is what made this so confusing to pin down: it wasn't
+       an all-or-nothing failure. `position: fixed` sidesteps #app's box
+       entirely and was confirmed working via a live test in the same
+       browser, so every overlay uses it now. */
     #hud {
-      position: absolute;
+      position: fixed;
       top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left));
       background: rgba(0,0,0,0.45);
       padding: 8px 14px;
@@ -41,7 +54,7 @@
       line-height: 1.5;
     }
     #controlsHint {
-      position: absolute;
+      position: fixed;
       top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right));
       background: rgba(0,0,0,0.45);
       padding: 8px 14px;
@@ -57,7 +70,7 @@
        the camera is looking — dead-center placement would hide exactly the
        thing the player should get to watch. */
     #banner {
-      position: absolute;
+      position: fixed;
       top: max(96px, calc(env(safe-area-inset-top) + 96px));
       left: 50%;
       transform: translateX(-50%);
@@ -76,7 +89,7 @@
        corner). Bump the text each time a change ships, so it's easy to
        confirm a phone/browser has actually picked up the latest build. */
     #versionTag {
-      position: absolute;
+      position: fixed;
       bottom: max(4px, env(safe-area-inset-bottom));
       left: max(6px, env(safe-area-inset-left));
       font-size: 10px;
@@ -86,56 +99,8 @@
       z-index: 6;
     }
 
-    /* Temporary on-screen diagnostic readout — see main.js's loop(). Not a
-       permanent feature; remove once the charge-ring production bug is
-       tracked down. Deliberately loud/visible (no dev tools needed). */
-    /* Deliberately placed clear of every other overlay (top-left HUD,
-       top-center special meter, bottom-center charge ring) so it can never
-       itself be the reason something else looks hidden. */
-    #debugOverlay {
-      position: absolute;
-      top: 160px; left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.85);
-      color: #0f0;
-      font-family: monospace;
-      font-size: 12px;
-      line-height: 1.4;
-      padding: 10px 14px;
-      border-radius: 8px;
-      white-space: pre;
-      pointer-events: none;
-      z-index: 50;
-    }
-    /* Maximally bulletproof visibility test: fixed positioning (no
-       dependency on any ancestor), max-safe z-index, huge solid color.
-       If this doesn't show while charging, the issue isn't the ring's own
-       CSS/positioning at all - something more fundamental is going on. */
-    #bruteForceFlash {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: #ff00ff;
-      z-index: 2147483647;
-      pointer-events: none;
-    }
-    /* Second isolation test: same positioning METHOD as #desktopChargeRing
-       (position:absolute, bottom-anchored, nested in #app) but huge and
-       lime-green, to test whether that specific combination is what's
-       failing to render, independent of the ring's own size/colors. */
-    #bruteForceAbs {
-      display: none;
-      position: absolute;
-      bottom: 92px; left: 50%;
-      transform: translateX(-50%);
-      width: 250px; height: 250px;
-      background: #39ff14;
-      z-index: 2000;
-      pointer-events: none;
-    }
-
     #mouseLookHint {
-      position: absolute;
+      position: fixed;
       bottom: 22px; left: 50%;
       transform: translateX(-50%);
       background: rgba(0,0,0,0.55);
@@ -147,7 +112,7 @@
 
     /* --- Shove charge ring (desktop) --- */
     #desktopChargeRing {
-      position: absolute;
+      position: fixed;
       bottom: 92px; left: 50%;
       transform: translateX(-50%);
       width: 56px; height: 56px;
@@ -155,7 +120,7 @@
       border: 2px solid rgba(255,255,255,0.4);
       background: rgba(0,0,0,0.3);
       pointer-events: none;
-      z-index: 20;
+      z-index: 6;
       display: none;
     }
     #desktopChargeFill {
@@ -165,7 +130,7 @@
 
     /* --- Special-power meter (both platforms) --- */
     #specialMeter {
-      position: absolute;
+      position: fixed;
       top: max(12px, env(safe-area-inset-top));
       left: 50%;
       transform: translateX(-50%);
@@ -220,7 +185,7 @@
     }
 
     #loginOverlay {
-      position: absolute;
+      position: fixed;
       inset: 0;
       background: radial-gradient(circle at center, #1a1a2e, #05050a);
       display: flex;
@@ -258,7 +223,7 @@
 
     /* --- Touch controls (mobile/tablet) --- */
     #touchControls {
-      position: absolute;
+      position: fixed;
       inset: 0;
       z-index: 5;
     }
@@ -355,7 +320,7 @@
        automatically hides itself the moment the device is rotated. */
     #rotateHint {
       display: none;
-      position: absolute;
+      position: fixed;
       top: max(12px, env(safe-area-inset-top));
       left: 50%;
       transform: translateX(-50%);
@@ -404,9 +369,6 @@
       <div id="specialHint">Land 3 charged shoves</div>
     </div>
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
-    <div id="debugOverlay"></div>
-    <div id="bruteForceFlash"></div>
-    <div id="bruteForceAbs"></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -418,7 +380,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.12</div>
+    <div id="versionTag">v1.13</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

@@ -22,9 +22,6 @@ const specialPipEls = specialMeterEl ? [...specialMeterEl.querySelectorAll('.pip
 const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
-const debugOverlay = document.getElementById('debugOverlay');
-const bruteForceFlash = document.getElementById('bruteForceFlash');
-const bruteForceAbs = document.getElementById('bruteForceAbs');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -93,14 +90,6 @@ let lastSentZ = 0;
 // invisible regardless of what its fill color is set to.
 function updateChargeUI(progress) {
   setShoveChargeProgress(progress);
-  // Bulletproof visibility test — see #bruteForceFlash in index.html. If
-  // this full-screen fixed-position flash doesn't show while charging
-  // either, the problem isn't the ring's own CSS/stacking at all.
-  if (bruteForceFlash) bruteForceFlash.style.display = progress > 0 ? 'block' : 'none';
-  // Isolates whether position:absolute + bottom-anchoring inside #app
-  // specifically (the ring's own positioning method) is what's failing,
-  // independent of the ring's size/colors/z-index.
-  if (bruteForceAbs) bruteForceAbs.style.display = progress > 0 ? 'block' : 'none';
   if (!desktopChargeRing) return;
   if (progress > 0) {
     desktopChargeRing.style.display = 'block';
@@ -479,26 +468,7 @@ function loop(now) {
 
   // Read-only debug hook (harmless, no gameplay effect) so external tooling
   // can inspect ground-truth camera/player state instead of guessing it.
-  window.__debug = {
-    cameraYaw, cameraPitch, position: localPlayer?.position, alive: localPlayer?.alive,
-    controlsEnabled, fShoveHeld, chargeStartTime, specialReady,
-    hasDesktopChargeRing: !!desktopChargeRing, isTouchDevice: isTouchDevice()
-  };
-
-  // Temporary on-screen mirror of the above, so this can be read directly
-  // off the screen (or a screenshot) without opening dev tools at all.
-  if (debugOverlay) {
-    const chargeMs = chargeStartTime !== null ? Math.round(now - chargeStartTime) : null;
-    debugOverlay.textContent =
-      `controlsEnabled: ${controlsEnabled}\n` +
-      `alive: ${localPlayer?.alive}\n` +
-      `fShoveHeld: ${fShoveHeld}\n` +
-      `chargeStartTime: ${chargeStartTime !== null ? 'set' : 'null'}\n` +
-      `chargeMs: ${chargeMs}\n` +
-      `isTouchDevice: ${isTouchDevice()}\n` +
-      `hasDesktopChargeRing: ${!!desktopChargeRing}\n` +
-      `ringDisplay: ${desktopChargeRing ? desktopChargeRing.style.display || '(css default)' : 'n/a'}`;
-  }
+  window.__debug = { cameraYaw, cameraPitch, position: localPlayer?.position, alive: localPlayer?.alive };
 }
 
 // Phones reserve on-screen space for the browser's address bar unless the
