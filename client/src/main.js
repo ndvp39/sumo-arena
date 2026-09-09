@@ -384,8 +384,16 @@ function onShovePress() {
   chargeStartTime = performance.now();
 }
 
+// A ring at ~98% is visually indistinguishable from 100% (a 353°-drawn
+// conic-gradient looks like a full circle), so people reliably release the
+// instant it *looks* full — reaction time alone then lands the real
+// elapsed time just under CHARGE_HOLD_MS, firing a 'normal' shove despite
+// looking fully charged. This grace window makes "looks full" reliably
+// count as charged instead of requiring the exact millisecond.
+const CHARGE_FIRE_GRACE_MS = 150;
+
 // Release fires exactly one shove: 'charged' if the hold reached
-// CHARGE_HOLD_MS (the bar was full when released), otherwise 'normal' for
+// CHARGE_HOLD_MS (within the grace window above), otherwise 'normal' for
 // a quick tap. Holding past full just keeps the bar pinned at 100% and
 // waits — it never auto-fires or restarts a new charge on its own; only an
 // explicit release (this function) ever sends a shove.
@@ -394,7 +402,7 @@ function onShoveRelease() {
   fShoveHeld = false;
   if (chargeStartTime !== null) {
     const elapsed = performance.now() - chargeStartTime;
-    fireShove(elapsed >= CHARGE_HOLD_MS ? 'charged' : 'normal');
+    fireShove(elapsed >= CHARGE_HOLD_MS - CHARGE_FIRE_GRACE_MS ? 'charged' : 'normal');
   }
   chargeStartTime = null;
   updateChargeUI(0);
