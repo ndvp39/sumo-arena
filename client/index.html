@@ -86,6 +86,25 @@
       z-index: 6;
     }
 
+    /* Temporary on-screen diagnostic readout — see main.js's loop(). Not a
+       permanent feature; remove once the charge-ring production bug is
+       tracked down. Deliberately loud/visible (no dev tools needed). */
+    #debugOverlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.85);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 12px 16px;
+      border-radius: 8px;
+      white-space: pre;
+      pointer-events: none;
+      z-index: 50;
+    }
+
     #mouseLookHint {
       position: absolute;
       bottom: 22px; left: 50%;
@@ -356,6 +375,7 @@
       <div id="specialHint">Land 3 charged shoves</div>
     </div>
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
+    <div id="debugOverlay"></div>
 
     <div id="touchControls" style="display:none;">
       <div id="touchLookLayer"></div>
@@ -367,7 +387,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.8</div>
+    <div id="versionTag">v1.9</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

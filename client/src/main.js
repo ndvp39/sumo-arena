@@ -22,6 +22,7 @@ const specialPipEls = specialMeterEl ? [...specialMeterEl.querySelectorAll('.pip
 const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
+const debugOverlay = document.getElementById('debugOverlay');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -473,6 +474,21 @@ function loop(now) {
     controlsEnabled, fShoveHeld, chargeStartTime, specialReady,
     hasDesktopChargeRing: !!desktopChargeRing, isTouchDevice: isTouchDevice()
   };
+
+  // Temporary on-screen mirror of the above, so this can be read directly
+  // off the screen (or a screenshot) without opening dev tools at all.
+  if (debugOverlay) {
+    const chargeMs = chargeStartTime !== null ? Math.round(now - chargeStartTime) : null;
+    debugOverlay.textContent =
+      `controlsEnabled: ${controlsEnabled}\n` +
+      `alive: ${localPlayer?.alive}\n` +
+      `fShoveHeld: ${fShoveHeld}\n` +
+      `chargeStartTime: ${chargeStartTime !== null ? 'set' : 'null'}\n` +
+      `chargeMs: ${chargeMs}\n` +
+      `isTouchDevice: ${isTouchDevice()}\n` +
+      `hasDesktopChargeRing: ${!!desktopChargeRing}\n` +
+      `ringDisplay: ${desktopChargeRing ? desktopChargeRing.style.display || '(css default)' : 'n/a'}`;
+  }
 }
 
 // Phones reserve on-screen space for the browser's address bar unless the
