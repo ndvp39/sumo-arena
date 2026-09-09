@@ -89,16 +89,19 @@
     /* Temporary on-screen diagnostic readout — see main.js's loop(). Not a
        permanent feature; remove once the charge-ring production bug is
        tracked down. Deliberately loud/visible (no dev tools needed). */
+    /* Deliberately placed clear of every other overlay (top-left HUD,
+       top-center special meter, bottom-center charge ring) so it can never
+       itself be the reason something else looks hidden. */
     #debugOverlay {
       position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
+      top: 160px; left: 50%;
+      transform: translateX(-50%);
       background: rgba(0,0,0,0.85);
       color: #0f0;
       font-family: monospace;
-      font-size: 14px;
-      line-height: 1.5;
-      padding: 12px 16px;
+      font-size: 12px;
+      line-height: 1.4;
+      padding: 10px 14px;
       border-radius: 8px;
       white-space: pre;
       pointer-events: none;
@@ -126,7 +129,7 @@
       border: 2px solid rgba(255,255,255,0.4);
       background: rgba(0,0,0,0.3);
       pointer-events: none;
-      z-index: 6;
+      z-index: 20;
       display: none;
     }
     #desktopChargeFill {
@@ -387,7 +390,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.9</div>
+    <div id="versionTag">v1.10</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
