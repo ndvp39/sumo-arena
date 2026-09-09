@@ -9,6 +9,18 @@ export const GRAVITY = 20;
 export const JUMP_SPEED = 8;
 export const MOVE_SPEED = 5;
 
+// Just above the server's ELIMINATION_Y (-14, see server/constants.js) so a
+// falling player visually plunges into the themed liquid surface (see
+// scene.js#buildArena) right around the moment they're actually eliminated.
+export const VOID_SURFACE_Y = -13;
+// Once eliminated, the fall stops settling just under the liquid surface
+// instead of continuing forever — close enough to ELIMINATION_Y that the
+// extra drop is barely noticeable, but it means the camera (which keeps
+// following the local player every frame, dead or alive) actually comes to
+// rest near the death effect instead of chasing the body into the void
+// indefinitely, out of view.
+export const DEATH_SETTLE_Y = -15;
+
 export const SHOVE_COOLDOWN_MS = 650;
 export const PUNCH_ANIM_MS = 300;
 export const CHARGED_PUNCH_ANIM_MS = 450;

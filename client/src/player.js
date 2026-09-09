@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY } from './constants.js';
+import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY, DEATH_SETTLE_Y } from './constants.js';
 import { createAvatar, updateAvatar, triggerPunch, resetAvatarVisuals } from './avatar.js';
 
 // Local player: fully client-simulated movement/gravity/jump for zero input
@@ -102,6 +102,16 @@ export class LocalPlayer {
       }
     } else {
       this.grounded = false;
+    }
+
+    // Once eliminated, settle just under the liquid surface instead of
+    // falling forever — otherwise the camera (which keeps following this
+    // position every frame regardless of alive state) chases the body down
+    // out of view, and the death effect spawned back at the elimination
+    // point is left behind before anyone can actually see it.
+    if (!this.alive && this.position.y <= DEATH_SETTLE_Y) {
+      this.position.y = DEATH_SETTLE_Y;
+      this.velocityY = 0;
     }
 
     this.avatar.group.position.copy(this.position);

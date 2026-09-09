@@ -1,10 +1,6 @@
 import * as THREE from 'three';
+import { VOID_SURFACE_Y } from './constants.js';
 
-// Just above the server's ELIMINATION_Y (-14, see server/constants.js) so a
-// falling player visually plunges into the themed liquid surface right
-// around the moment they're actually eliminated, instead of vanishing 8
-// units above or below it.
-const VOID_SURFACE_Y = -13;
 // Debris/blood-splat palette — SKIN_TONE mirrors avatar.js's skin material
 // color so the "limbs" popping off read as the same character.
 const SKIN_TONE = 0xf0c8a0;

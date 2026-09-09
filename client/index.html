@@ -51,10 +51,16 @@
       line-height: 1.6;
       text-align: right;
     }
+    /* Anchored near the top, clear of screen-center, on purpose: this
+       banner covers "You were eliminated" while the local player's own
+       death (fall/blood/limb-pop effect) is still playing out right where
+       the camera is looking — dead-center placement would hide exactly the
+       thing the player should get to watch. */
     #banner {
       position: absolute;
-      top: 40%; left: 50%;
-      transform: translate(-50%, -50%);
+      top: max(96px, calc(env(safe-area-inset-top) + 96px));
+      left: 50%;
+      transform: translateX(-50%);
       background: rgba(0,0,0,0.65);
       padding: 20px 36px;
       border-radius: 12px;
@@ -361,7 +367,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.5</div>
+    <div id="versionTag">v1.6</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
