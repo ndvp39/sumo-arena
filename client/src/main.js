@@ -362,22 +362,20 @@ function applyMouseLookDelta(dx, dy, sensitivity) {
   cameraPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, cameraPitch));
 }
 
-// Sends a shove if the cooldown allows it. Returns whether it actually
-// fired, so callers (the charge loop especially) know whether to advance
-// their own state or keep waiting.
+// Sends a shove if the cooldown allows it; silently does nothing otherwise
+// (matches the existing tap-on-cooldown behavior).
 function fireShove(power) {
-  if (!controlsEnabled || !localPlayer?.alive) return false;
+  if (!controlsEnabled || !localPlayer?.alive) return;
   const now = performance.now();
-  if (now - lastShoveClientTime < SHOVE_COOLDOWN_MS) return false;
+  if (now - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
   lastShoveClientTime = now;
   network.sendShove(power);
-  return true;
 }
 
 // Press: start charging (unless already on cooldown, in which case this
 // hold does nothing — matches a tap's existing silent-no-op-on-cooldown
-// behavior). The loop() below advances the charge and auto-fires a
-// 'charged' shove once CHARGE_HOLD_MS is reached.
+// behavior). The loop() below advances the charge bar toward full but does
+// NOT fire anything by itself — nothing happens until release (see below).
 function onShovePress() {
   if (fShoveHeld) return;
   fShoveHeld = true;
@@ -386,15 +384,17 @@ function onShovePress() {
   chargeStartTime = performance.now();
 }
 
-// Release: a quick tap (released before the charge threshold) fires a
-// normal shove. A hold that already reached the threshold fired its
-// 'charged' shove inside loop() already, so there's nothing left to do here
-// but clear the charge state/UI.
+// Release fires exactly one shove: 'charged' if the hold reached
+// CHARGE_HOLD_MS (the bar was full when released), otherwise 'normal' for
+// a quick tap. Holding past full just keeps the bar pinned at 100% and
+// waits — it never auto-fires or restarts a new charge on its own; only an
+// explicit release (this function) ever sends a shove.
 function onShoveRelease() {
   if (!fShoveHeld) return;
   fShoveHeld = false;
-  if (chargeStartTime !== null && performance.now() - chargeStartTime < CHARGE_HOLD_MS) {
-    fireShove('normal');
+  if (chargeStartTime !== null) {
+    const elapsed = performance.now() - chargeStartTime;
+    fireShove(elapsed >= CHARGE_HOLD_MS ? 'charged' : 'normal');
   }
   chargeStartTime = null;
   updateChargeUI(0);
@@ -445,10 +445,9 @@ function loop(now) {
     }
   }
 
-  // Advance the shove charge while held. Reaching CHARGE_HOLD_MS auto-fires
-  // a 'charged' shove and immediately starts the next cycle (so holding
-  // straight through keeps charging repeatedly); if the fire attempt is
-  // blocked by cooldown, the bar just holds at full until it clears.
+  // Advance the shove charge bar while held. Caps at 100% and just sits
+  // there — firing only happens on release (onShoveRelease), never here,
+  // so holding past full doesn't auto-fire or restart anything on its own.
   if (fShoveHeld && chargeStartTime !== null) {
     if (!controlsEnabled || !localPlayer?.alive) {
       chargeStartTime = null;
@@ -456,9 +455,6 @@ function loop(now) {
     } else {
       const elapsed = now - chargeStartTime;
       updateChargeUI(Math.min(1, elapsed / CHARGE_HOLD_MS));
-      if (elapsed >= CHARGE_HOLD_MS && fireShove('charged')) {
-        chargeStartTime = now;
-      }
     }
   }
 
