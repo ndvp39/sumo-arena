@@ -6,10 +6,20 @@ import { GameRoom } from './GameRoom.js';
 import { listMaps, DEFAULT_MAP_ID } from './maps.js';
 
 const PORT = process.env.PORT || 3000;
+// Bump alongside client/index.html's #versionTag when shipping a feature
+// pass, so /health lets you confirm what's actually live on a deploy
+// without needing a socket test script. RENDER_GIT_COMMIT is auto-injected
+// by Render on every deploy, so `commit` is free extra confirmation there.
+const SERVER_VERSION = 'v1.5';
 
 const app = express();
 app.use(cors());
-app.get('/health', (req, res) => res.json({ ok: true, players: room?.players.size ?? 0 }));
+app.get('/health', (req, res) => res.json({
+  ok: true,
+  players: room?.players.size ?? 0,
+  version: SERVER_VERSION,
+  commit: process.env.RENDER_GIT_COMMIT || null
+}));
 app.get('/maps', (req, res) => res.json(listMaps()));
 
 const httpServer = createServer(app);
