@@ -24,6 +24,7 @@ const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
 const howToPlayEl = document.getElementById('howToPlay');
+const killFeedEl = document.getElementById('killFeed');
 
 // The one place the full control list lives — in-game hints (#controlsHint,
 // touch button labels) stay bare key names on the assumption this was seen
@@ -182,6 +183,57 @@ function updateSpecialUI(count, threshold, ready) {
       : `${count} / ${threshold}`;
   }
   setSpecialReady(ready);
+}
+
+// power -> a punchy past-tense verb, distinct per tier so the method of
+// elimination reads at a glance, not just who-vs-who.
+const KILL_VERB = {
+  normal: 'shoved',
+  charged: 'smashed',
+  special: 'kicked',
+  throw: 'launched',
+  drop: 'dropped'
+};
+const KILL_FEED_MAX_ENTRIES = 4;
+const KILL_FEED_LIFETIME_MS = 5000;
+
+// killerName === null means unassisted — fell on their own, or the hit
+// that caused it was too long ago to credit (see the server's
+// KILL_ATTRIBUTION_MS). Built with textContent/createTextNode throughout,
+// never innerHTML — player names are user-provided (the login name field)
+// and this project already fixed one XSS bug from rendering user text via
+// innerHTML elsewhere; not repeating that here.
+function addKillFeedEntry(victimName, killerName, power) {
+  if (!killFeedEl) return;
+  const row = document.createElement('div');
+  row.className = 'killFeedRow';
+
+  if (killerName) {
+    const killerSpan = document.createElement('span');
+    killerSpan.className = 'killer';
+    killerSpan.textContent = killerName;
+    row.appendChild(killerSpan);
+    row.appendChild(document.createTextNode(` ${KILL_VERB[power] || 'eliminated'} `));
+    const victimSpan = document.createElement('span');
+    victimSpan.className = 'victim';
+    victimSpan.textContent = victimName;
+    row.appendChild(victimSpan);
+  } else {
+    const victimSpan = document.createElement('span');
+    victimSpan.className = 'victim';
+    victimSpan.textContent = victimName;
+    row.appendChild(victimSpan);
+    row.appendChild(document.createTextNode(' fell'));
+  }
+
+  killFeedEl.prepend(row);
+  while (killFeedEl.children.length > KILL_FEED_MAX_ENTRIES) {
+    killFeedEl.removeChild(killFeedEl.lastChild);
+  }
+  setTimeout(() => {
+    row.classList.add('fading');
+    setTimeout(() => row.remove(), 400);
+  }, KILL_FEED_LIFETIME_MS);
 }
 
 function showBanner(text, sub = '') {
@@ -349,8 +401,9 @@ function startGame(name) {
       // above (power: 'throw' | 'drop') — this event is purely for
       // clearing the "You've been grabbed!" banner and local flag state.
     },
-    onEliminated: (id) => {
+    onEliminated: ({ id, name, killerId, killerName, power }) => {
       playEliminate();
+      addKillFeedEntry(name, killerId === id ? null : killerName, power);
       if (id === selfId) {
         sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
         localPlayer.setAlive(false);

@@ -27,10 +27,18 @@ export const SHOVE_RANGE = PLAYER_RADIUS * 2 + ARM_REACH; // omnidirectional —
 export const SHOVE_FORCE = 16;
 export const SHOVE_UP_FORCE = 5;
 // A charged shove (2s hold, see CHARGE_HOLD_MS on the client) hits at the
-// same range but lands much harder, as a payoff for the wind-up.
-export const CHARGED_SHOVE_FORCE = 30;
-export const CHARGED_SHOVE_UP_FORCE = 9;
+// same range but lands much harder, as a payoff for the wind-up — 2.5x a
+// regular shove (was ~1.9x, not a clear enough gap to actually feel like a
+// different move rather than a slightly-stronger version of the same one).
+export const CHARGED_SHOVE_FORCE = 40;
+export const CHARGED_SHOVE_UP_FORCE = 12;
 export const SHOVE_COOLDOWN_MS = 650;
+
+// Kill-feed attribution: a hit only gets credited for an elimination if it
+// landed within this long beforehand — otherwise an old hit from well
+// before someone wandered off the edge on their own would wrongly get
+// blamed for an unrelated later fall.
+export const KILL_ATTRIBUTION_MS = 4000;
 
 // Special power: land this many charged shoves (see GameRoom#handleShove)
 // and the next shove input unleashes a two-legged flying kick instead — a

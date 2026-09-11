@@ -1,6 +1,6 @@
 import {
   PLAYER_RADIUS, ELIMINATION_Y,
-  SHOVE_RANGE, SHOVE_FORCE, SHOVE_UP_FORCE, SHOVE_COOLDOWN_MS,
+  SHOVE_RANGE, SHOVE_FORCE, SHOVE_UP_FORCE, SHOVE_COOLDOWN_MS, KILL_ATTRIBUTION_MS,
   CHARGED_SHOVE_FORCE, CHARGED_SHOVE_UP_FORCE,
   SPECIAL_POWER_THRESHOLD, SPECIAL_KICK_RANGE, SPECIAL_KICK_FORCE, SPECIAL_KICK_UP_FORCE,
   GRAB_RANGE, GRAB_COOLDOWN_MS, HELD_OFFSET_Y, HOLD_MAX_MS,
@@ -69,9 +69,27 @@ export class GameRoom {
       grabbedAt: 0,
       // Momentum: derived from real position deltas in updateFromClient,
       // never trusted directly from the client — see getMomentumMultiplier.
+      // lastReported* is deliberately separate from x/y/z: resolveCollisions
+      // mutates x/z directly every tick (30Hz) to push overlapping players
+      // apart, completely independent of when 'move' packets arrive. Using
+      // x/z as the "previous position" reference for velocity would mean
+      // getting close enough to shove someone — which is also often close
+      // enough to overlap them, since SHOVE_RANGE is generous relative to
+      // the collision radius — silently corrupts the very momentum signal
+      // combat is supposed to reward, right when it matters most.
       speed: 0,
       vertSpeed: 0,
-      lastMoveTime: 0
+      lastMoveTime: 0,
+      lastReportedX: x,
+      lastReportedY: 0,
+      lastReportedZ: z,
+      // Kill attribution for the client's feed (see checkEliminations):
+      // who last landed a real hit on this player, with what, and when —
+      // "when" matters so an old hit from ages ago doesn't get wrongly
+      // blamed for an unrelated later fall (see KILL_ATTRIBUTION_MS).
+      lastHitBy: null,
+      lastHitPower: null,
+      lastHitAt: 0
     };
     this.players.set(id, player);
     this.roundActive = true;
@@ -104,7 +122,9 @@ export class GameRoom {
     if (typeof data.x !== 'number' || typeof data.y !== 'number' || typeof data.z !== 'number') return;
 
     // Derive real velocity from how far they actually moved since their
-    // last update, BEFORE overwriting x/y/z below — this is what
+    // last update, using lastReported* (their own last self-reported spot,
+    // NOT player.x/z — see the field comment in addPlayer for why that
+    // distinction matters) as the "previous position". This is what
     // getMomentumMultiplier reads for combat, and deriving it from trusted
     // position history (rather than accepting a client-reported speed
     // value) means it can't be forged by just claiming a big number; the
@@ -115,13 +135,16 @@ export class GameRoom {
     // and any implausibly large gap (a lag spike or a respawn teleport) —
     // both would otherwise register as a momentary "infinite speed" burst.
     if (player.lastMoveTime > 0 && dt > 0.001 && dt < 1) {
-      const dx = data.x - player.x;
-      const dz = data.z - player.z;
-      const dy = data.y - player.y;
+      const dx = data.x - player.lastReportedX;
+      const dz = data.z - player.lastReportedZ;
+      const dy = data.y - player.lastReportedY;
       player.speed = Math.min(MOMENTUM_MAX_TRACKED_SPEED, Math.hypot(dx, dz) / dt);
       player.vertSpeed = Math.max(-MOMENTUM_MAX_TRACKED_FALL_SPEED, Math.min(MOMENTUM_MAX_TRACKED_FALL_SPEED, dy / dt));
     }
     player.lastMoveTime = now;
+    player.lastReportedX = data.x;
+    player.lastReportedY = data.y;
+    player.lastReportedZ = data.z;
 
     // Trust client-simulated transform; server still validates boundary/collision each tick.
     player.x = data.x;
@@ -202,6 +225,16 @@ export class GameRoom {
     holder.holding = null;
     if (!target) return; // held player vanished (disconnected) mid-hold
     target.heldBy = null;
+    // While held, target.x/y/z was teleported to the holder every tick
+    // (see updateHeldPlayers) but target's OWN lastReported* was frozen at
+    // wherever they were the instant they got grabbed, since their move
+    // packets are ignored the whole time they're held. Without this reset,
+    // their first move packet after release would measure a delta against
+    // that stale pre-grab spot instead of the real release point, reading
+    // as a brief false "teleport speed" burst.
+    target.lastReportedX = target.x;
+    target.lastReportedY = target.y;
+    target.lastReportedZ = target.z;
 
     // Not gated on SHOVE_COOLDOWN_MS on the way in — a throw is a
     // deliberate release of an already-committed grab and must never be
@@ -225,6 +258,9 @@ export class GameRoom {
       upForce: THROW_UP_FORCE * momentum,
       power: 'throw'
     });
+    target.lastHitBy = holderId;
+    target.lastHitPower = 'throw';
+    target.lastHitAt = Date.now();
     this.io.emit('released', { holderId, targetId, thrown: true });
   }
 
@@ -246,6 +282,10 @@ export class GameRoom {
     }
     if (!target) return;
     target.heldBy = null;
+    // Same stale-reference fix as throwHeldPlayer — see its comment.
+    target.lastReportedX = target.x;
+    target.lastReportedY = target.y;
+    target.lastReportedZ = target.z;
 
     // Random direction, gentle force — reads as "oops, dropped", not "hit".
     const angle = Math.random() * Math.PI * 2;
@@ -346,6 +386,9 @@ export class GameRoom {
         upForce,
         power
       });
+      target.lastHitBy = id;
+      target.lastHitPower = power;
+      target.lastHitAt = Date.now();
 
       // Getting knocked breaks your grip — losing control of yourself
       // means losing control of whoever you were holding too.
@@ -411,7 +454,22 @@ export class GameRoom {
       if (player.y < ELIMINATION_Y) {
         player.alive = false;
         anyEliminated = true;
-        this.io.emit('playerEliminated', { id: player.id });
+        // Attribute to whoever hit them last, but only if that hit is
+        // recent enough (KILL_ATTRIBUTION_MS) — otherwise this reads as an
+        // unassisted fall, not a kill some hit from ages ago gets wrongly
+        // credited for. The killer may have disconnected since; killerName
+        // is captured here (not looked up client-side) so the feed still
+        // reads correctly even if they're already gone by the time this
+        // arrives.
+        const recentHit = player.lastHitBy && (Date.now() - player.lastHitAt < KILL_ATTRIBUTION_MS);
+        const killer = recentHit ? this.players.get(player.lastHitBy) : null;
+        this.io.emit('playerEliminated', {
+          id: player.id,
+          name: player.name,
+          killerId: killer ? killer.id : null,
+          killerName: killer ? killer.name : null,
+          power: recentHit ? player.lastHitPower : null
+        });
       }
     }
     if (anyEliminated) this.checkWinCondition();
@@ -457,10 +515,20 @@ export class GameRoom {
       player.z = z;
       player.rotY = rotY;
       player.alive = true;
+      // Respawning is a teleport — without resetting these too, the next
+      // move packet's delta would be measured against the pre-respawn
+      // spot, reading as a brief (if harmless) momentary "max speed" burst.
+      player.lastReportedX = x;
+      player.lastReportedY = 0;
+      player.lastReportedZ = z;
       // Fresh round, fresh combo — a special earned last round shouldn't
       // carry over as a surprise opening move.
       player.chargedHitStreak = 0;
       player.specialReady = false;
+      // Fresh round, no stale kill attribution either.
+      player.lastHitBy = null;
+      player.lastHitPower = null;
+      player.lastHitAt = 0;
       // Fresh round, no lingering grab either — respawning everyone at
       // spawn points would otherwise leave a held player's heldBy pointing
       // at a holder who just teleported away.

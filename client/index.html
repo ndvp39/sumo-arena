@@ -79,6 +79,48 @@
       line-height: 1.6;
       text-align: right;
     }
+    /* Kill feed: who eliminated whom and how, minimal (short phrase, not a
+       sentence) but with a bit of visual pop — a slide-in/fade-out and
+       color-coded names rather than a flat log line. Positioned mid-right,
+       deliberately clear of every other overlay on both platforms: not
+       top (HUD/special-meter/controlsHint), not bottom (mobile's
+       joystick/action buttons, desktop's charge ring). Same position on
+       both — the "match it for computer and phone" ask was about a
+       consistent layout, not a different spot per device. */
+    #killFeed {
+      position: fixed;
+      top: 35%;
+      right: max(10px, env(safe-area-inset-right));
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-end;
+      pointer-events: none;
+      z-index: 7;
+    }
+    .killFeedRow {
+      background: rgba(0,0,0,0.5);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      max-width: 68vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 1;
+      transform: translateX(0);
+      transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+      animation: killFeedIn 0.25s ease-out;
+    }
+    .killFeedRow.fading { opacity: 0; transform: translateX(20px); }
+    .killFeedRow .killer { color: #ffcc33; font-weight: bold; }
+    .killFeedRow .victim { color: #ff6b6b; font-weight: bold; }
+    @keyframes killFeedIn {
+      from { opacity: 0; transform: translateX(30px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    body.touch-ui .killFeedRow { font-size: 10px; padding: 3px 8px; }
+
     /* Anchored near the top, clear of screen-center, on purpose: this
        banner covers "You were eliminated" while the local player's own
        death (fall/blood/limb-pop effect) is still playing out right where
@@ -441,6 +483,7 @@
       Q Special &middot; E Grab
     </div>
     <div id="banner"></div>
+    <div id="killFeed"></div>
     <div id="mouseLookHint" style="display:none;">Click to look around</div>
 
     <div id="specialMeter">
@@ -463,7 +506,7 @@
       <div id="touchGrabBtn" class="touchBtn">GRAB</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.23</div>
+    <div id="versionTag">v1.24</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

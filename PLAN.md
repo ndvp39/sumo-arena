@@ -633,3 +633,54 @@ plus a dust-colored impact ring at the feet reusing the existing
 shockwave-effect system — guaranteed visible regardless of how subtle the
 scale change reads, since it's a distinct, independently-proven visual
 language already used for combat hits.
+
+## 17. Fixed a real momentum bug, bumped charged force, added a kill feed
+
+**Root-caused "sprinting into a shove/throw barely feels different."**
+`updateFromClient` derived a player's speed by comparing each new position
+against `player.x`/`z` — but `resolveCollisions()` mutates that exact same
+field directly, every server tick (30Hz), completely independent of when
+move packets arrive. Getting close enough to shove/grab someone is often
+close enough to overlap them too, since `SHOVE_RANGE`/`GRAB_RANGE` are
+generous relative to the 1.0-unit collision radius — so the single most
+common real-gameplay moment (running up to someone to hit them) was
+exactly the moment collision resolution was actively fighting the same
+field the momentum system read as "previous position", silently erasing
+most of the speed signal right when it should have mattered most. Fixed
+by tracking `lastReportedX/Y/Z` as a separate field, updated only from the
+client's own move packets and never touched by collision resolution.
+Verified with a live test simulating a realistic 20Hz-paced sprint that
+ends up overlapping the target before shoving (the exact failure
+scenario): force went from a barely-there ~17 (matching what was actually
+being reported) to ~23-24, matching the theoretical ~1.5x for that speed
+almost exactly. Also found and fixed the same staleness one level deeper:
+a released (thrown/dropped) player's own tracking reference was frozen at
+their pre-grab position the whole time they were held (their moves are
+ignored while held, so it never advanced), which would have read as a
+false "teleport speed" burst on their first move after release — reset
+alongside the grab-state cleanup in both `throwHeldPlayer` and `dropHeld`.
+
+**Charged shove force 30→40** (was only ~1.9x a regular shove — not a
+clear enough gap to read as a genuinely different, harder-hitting move
+rather than a slightly-stronger version of the same one; now 2.5x).
+
+**Kill feed.** The server never attributed eliminations to anyone before
+this — `playerEliminated` carried only an id. Each player now tracks
+`lastHitBy`/`lastHitPower`/`lastHitAt` whenever a shove or throw actually
+lands on them, and `checkEliminations` credits whoever hit them last, but
+only if that hit landed within `KILL_ATTRIBUTION_MS` (4s) — otherwise it
+reads as an unassisted fall rather than wrongly blaming a hit from ages
+ago. The client renders this as a minimal, same-position-on-both-platforms
+side panel (`#killFeed`, mid-right, clear of every other overlay on both
+desktop and mobile) — short phrases with a punchy verb per method
+("Alice **smashed** Bob", "Alice **launched** Bob", "Bob fell") rather
+than a full sentence, color-coded names, and a brief slide-in/fade-out
+rather than a flat log line. Built entirely with `textContent`/
+`createTextNode`, never `innerHTML`, since player names are user-provided
+text and this project already fixed one real XSS bug from exactly that
+pattern elsewhere (see the original commit history) — not repeating it
+here. Verified the full attribution payload shape with a live test
+(attributed case matches exactly; the unassisted case is a simple,
+directly-reviewable conditional rather than separately live-tested, since
+a clean 2-player test round ends immediately after the first elimination,
+before a second, unassisted one could be staged).
