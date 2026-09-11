@@ -25,6 +25,12 @@
 //                 void. Falls back to voidColor if omitted.
 //   liquidGlow    true for surfaces that should read as glowing/molten
 //                 rather than a flat reflective liquid (lava, neon goo, ...)
+//   hazard        optional environmental hazard key consumed by
+//                 GameRoom's hazard scheduling (see server/constants.js's
+//                 HAZARD_* values) — e.g. 'fireball'. Omitted entirely on
+//                 every map that has no hazard; the client never needs to
+//                 know this field exists, hazards are announced purely via
+//                 the 'hazardWarning'/'hazardTrigger' events.
 
 export const MAPS = {
   classic: {
@@ -97,7 +103,8 @@ export const MAPS = {
     emissiveGround: 0x552200,
     decoration: 'lava',
     liquidColor: 0xff5522,
-    liquidGlow: true
+    liquidGlow: true,
+    hazard: 'fireball'
   },
   frozen: {
     id: 'frozen',

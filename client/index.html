@@ -161,6 +161,48 @@
     }
     #banner .sub { font-size: 15px; opacity: 0.8; margin-top: 6px; }
 
+    /* Combo/streak callout ("DOUBLE KILL!" etc), broadcast to every client
+       so a rampage reads as an event the whole match notices, not just the
+       player on the streak. Deliberately its own element, NOT reusing
+       #banner: #banner is reserved for the LOCAL player's own
+       grabbed/eliminated/round-over state and gets shown/hidden by that
+       logic independently — a combo can fire for anyone, at any time,
+       regardless of what #banner is currently doing for this viewer.
+       #killFeed is edge-anchored (right on desktop, left on mobile), not
+       centered, so it never actually competes for this space regardless of
+       its top offset. #banner IS centered (left:50%) same as this element,
+       though, and its own top is a fixed 96px (not a %) — a % top here
+       would drift into #banner's ~96-191px span on common viewport heights
+       (a phone at 667-1080px tall lands #comboText's 20% well inside that
+       range), which matters concretely: the player just eliminated by a
+       kill that also completes a combo sees BOTH their own "Eliminated"
+       banner and this callout at the same instant. Pinned to a fixed
+       pixel offset instead, comfortably clear of #banner's tallest state
+       (title + .sub line), same idiom as #banner's own 96px offset from
+       #hud above it. */
+    #comboText {
+      position: fixed;
+      top: max(235px, calc(env(safe-area-inset-top) + 235px));
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.5);
+      font-size: 46px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #ffcc33;
+      text-shadow: 0 0 14px rgba(255,153,0,0.85), 0 2px 6px rgba(0,0,0,0.9);
+      pointer-events: none;
+      z-index: 8;
+      opacity: 0;
+      white-space: nowrap;
+      transition: opacity 0.4s ease-in, transform 0.4s ease-in;
+    }
+    #comboText.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+      transition: opacity 0.18s ease-out, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    body.touch-ui #comboText { font-size: 26px; }
+
     /* Small build-version tag, tucked into the corner margin so it never
        overlaps the mobile joystick (which starts 24px from this same
        corner). Bump the text each time a change ships, so it's easy to
@@ -503,6 +545,7 @@
       Q Special &middot; E Grab
     </div>
     <div id="banner"></div>
+    <div id="comboText"></div>
     <div id="killFeed"></div>
     <div id="mouseLookHint" style="display:none;">Click to look around</div>
 
@@ -526,7 +569,7 @@
       <div id="touchGrabBtn" class="touchBtn">GRAB</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.25</div>
+    <div id="versionTag">v1.26</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

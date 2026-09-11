@@ -49,6 +49,11 @@ export const SPRINT_JOYSTICK_THRESHOLD = 0.8;
 // cycle) without needing a separate "is sprinting" signal into the avatar.
 export const WALK_CYCLE_HZ_PER_SPEED = 0.4;
 
+// Mirrors server/constants.js HAZARD_RADIUS — the volcano hazard's warning
+// telegraph is drawn at this size purely for visual accuracy; the client
+// never uses it for any hit/collision decision, that's server-authoritative.
+export const HAZARD_RADIUS_VISUAL = 2.5;
+
 export const NETWORK_SEND_HZ = 20;
 export const REMOTE_LERP_FACTOR = 0.25; // per-frame-at-60fps smoothing toward latest snapshot
 

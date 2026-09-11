@@ -31,6 +31,8 @@ export class Network {
     this.socket.on('grabbed', (data) => handlers.onGrabbed?.(data));
     this.socket.on('released', (data) => handlers.onReleased?.(data));
     this.socket.on('playerEliminated', (data) => handlers.onEliminated?.(data));
+    this.socket.on('hazardWarning', (data) => handlers.onHazardWarning?.(data));
+    this.socket.on('hazardTrigger', (data) => handlers.onHazardTrigger?.(data));
     this.socket.on('roundOver', (data) => handlers.onRoundOver?.(data));
     this.socket.on('roundStart', (data) => handlers.onRoundStart?.(data));
     this.socket.on('disconnect', () => handlers.onDisconnect?.());

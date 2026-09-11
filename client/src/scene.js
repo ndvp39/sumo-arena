@@ -1,10 +1,17 @@
 import * as THREE from 'three';
-import { VOID_SURFACE_Y } from './constants.js';
+import { VOID_SURFACE_Y, HAZARD_RADIUS_VISUAL } from './constants.js';
 
 // Debris/blood-splat palette — SKIN_TONE mirrors avatar.js's skin material
 // color so the "limbs" popping off read as the same character.
 const SKIN_TONE = 0xf0c8a0;
 const BLOOD_COLOR = 0xdd2222;
+
+// Fixed look-down angle for the kill-cam (see updateKillCamera) — no mouse
+// input drives it, so it needs its own constant rather than reading
+// cameraPitch. Close to the default look-angle main.js starts every player
+// at, so the very first frame of a kill-cam doesn't jar with a wildly
+// different angle than what the eliminated player was just looking at.
+const KILLCAM_PITCH = 0.28;
 
 // Owns the renderer, camera, lighting, and the arena mesh. The arena is
 // rebuilt on demand from a map config object sent by the server — there is
@@ -125,6 +132,16 @@ export class SceneManager {
         fx.mesh.rotation.x += fx.angularVelX * dt;
         fx.mesh.rotation.z += fx.angularVelZ * dt;
         fx.mesh.material.opacity = 1 - t;
+      } else if (fx.type === 'hazardWarning') {
+        // Flat pulsing disc, not an expanding ring — it needs to keep
+        // marking the exact eruption spot for its whole lifetime, not grow
+        // past it. Pulses faster as t climbs toward 1 (the eruption moment)
+        // so the last instant reads as an urgent flicker rather than a
+        // steady glow.
+        const pulseHz = 2 + t * 6;
+        fx.mesh.material.opacity = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(fx.age * pulseHz * Math.PI * 2));
+        const scale = 1 + t * 0.15;
+        fx.mesh.scale.set(scale, scale, scale);
       } else {
         const scale = 1 + t * 4 * fx.scaleMult;
         fx.mesh.scale.set(scale, scale, scale);
@@ -138,6 +155,33 @@ export class SceneManager {
         this.effects.splice(i, 1);
       }
     }
+  }
+
+  // Volcano Pit hazard telegraph: a flat pulsing disc marking exactly where
+  // a fireball is about to erupt, sized to match the server's real hit
+  // radius (HAZARD_RADIUS_VISUAL) so "am I clear of this" reads accurately.
+  // Removed automatically once `durationMs` (the server's HAZARD_WARNING_MS)
+  // elapses, via the same effects-array lifecycle as every other transient
+  // visual — see updateEffects's 'hazardWarning' branch.
+  spawnHazardWarning(x, z, durationMs) {
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(HAZARD_RADIUS_VISUAL, 32),
+      new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(x, 0.03, z);
+    this.scene.add(disc);
+    this.effects.push({ type: 'hazardWarning', mesh: disc, age: 0, duration: Math.max(0.05, durationMs / 1000) });
+  }
+
+  // The eruption itself: two overlapping shockwave rings (a wide slow
+  // outer one, a smaller faster inner one), fire-colored and noticeably
+  // bigger than a normal shove's — this hits everyone in a wide radius, not
+  // one target, so it should read as a bigger event than any single hit.
+  spawnHazardEruption(x, z) {
+    const position = { x, y: 0, z };
+    this.spawnShockwave(position, { color: 0xff5500, scaleMult: 3, duration: 0.6 });
+    this.spawnShockwave(position, { color: 0xffcc33, scaleMult: 1.8, duration: 0.4 });
   }
 
   // Brief camera jitter on impact, felt only by whoever got hit. Self-
@@ -537,6 +581,30 @@ export class SceneManager {
     }
 
     this.camera.lookAt(targetPos.x, targetPos.y + 1.2, targetPos.z);
+  }
+
+  // Kill-cam: same distance/height offset math as updateCamera, but with a
+  // FIXED pitch (KILLCAM_PITCH, no mouse input) and anchored to the
+  // killer's own position/rotation instead of the local player's — briefly
+  // shows whoever just eliminated you, third-person, from behind their own
+  // facing. Reuses the same _desiredCamPos/lerp easing as every other
+  // camera mode so the cut into/out of it isn't jarring.
+  updateKillCamera(killerPos, killerYaw, dt) {
+    const distance = 6.5;
+    const baseHeight = 1.6;
+
+    const horizDist = distance * Math.cos(KILLCAM_PITCH);
+    const vertOffset = baseHeight + distance * Math.sin(KILLCAM_PITCH);
+
+    this._desiredCamPos.set(
+      killerPos.x - Math.sin(killerYaw) * horizDist,
+      killerPos.y + vertOffset,
+      killerPos.z - Math.cos(killerYaw) * horizDist
+    );
+    const alpha = 1 - Math.pow(0.0001, dt);
+    this.camera.position.lerp(this._desiredCamPos, alpha);
+
+    this.camera.lookAt(killerPos.x, killerPos.y + 1.2, killerPos.z);
   }
 
   // High overview of the whole arena, eased into from wherever the camera

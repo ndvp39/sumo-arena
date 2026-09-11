@@ -77,6 +77,14 @@ export class RemotePlayers {
     return this.map.get(id)?.avatar.group.position ?? null;
   }
 
+  // Yaw only (radians) — same lookup pattern as getPosition, used by the
+  // kill-cam to orient itself behind whoever just eliminated the local
+  // player. `?? null` (not the entry's absence alone) matters here: a real
+  // rotation of exactly 0 is a legitimate value, not "no rotation found".
+  getRotation(id) {
+    return this.map.get(id)?.avatar.group.rotation.y ?? null;
+  }
+
   respawnAll(players, selfId) {
     for (const p of players) {
       if (p.id === selfId) continue;

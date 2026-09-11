@@ -8,6 +8,8 @@ import {
   MOMENTUM_MAX_TRACKED_SPEED, MOMENTUM_MAX_TRACKED_FALL_SPEED,
   MOMENTUM_SPEED_BONUS_PER_UNIT, MOMENTUM_FALL_BONUS_PER_UNIT, MOMENTUM_MAX_MULTIPLIER,
   MOMENTUM_GRAB_RANGE_BONUS_PER_UNIT, MOMENTUM_GRAB_RANGE_MAX_MULTIPLIER,
+  HAZARD_INTERVAL_MIN_MS, HAZARD_INTERVAL_MAX_MS, HAZARD_WARNING_MS, HAZARD_RADIUS,
+  HAZARD_FORCE, HAZARD_UP_FORCE,
   TICK_RATE_HZ, ROUND_RESTART_DELAY_MS, MIN_PLAYERS_TO_START,
   PLAYER_COLORS
 } from './constants.js';
@@ -28,6 +30,104 @@ export class GameRoom {
     this.roundActive = true;
     this.restartTimer = null;
     this.map = getMap(mapId);
+    // Volcano Pit's fireball hazard: null on any map without the 'fireball'
+    // hazard key, or the next real-time eruption timestamp otherwise. See
+    // scheduleNextHazard.
+    this.nextHazardAt = null;
+    this.scheduleNextHazard();
+  }
+
+  // Picks a fresh, randomized eruption time if the current map has the
+  // 'fireball' hazard, or clears it entirely otherwise. Called on
+  // construction and every restartRound() map swap, so a map with no
+  // hazard never ticks toward one it could never fire, and switching INTO
+  // a hazard map always starts its timer fresh rather than reusing
+  // whatever the previous map happened to leave behind.
+  scheduleNextHazard() {
+    if (this.map.hazard !== 'fireball') {
+      this.nextHazardAt = null;
+      return;
+    }
+    const delay = HAZARD_INTERVAL_MIN_MS + Math.random() * (HAZARD_INTERVAL_MAX_MS - HAZARD_INTERVAL_MIN_MS);
+    this.nextHazardAt = Date.now() + delay;
+  }
+
+  // Warns everyone at a random point on the platform, then (after
+  // HAZARD_WARNING_MS) actually erupts there — see hazardErupt. Re-arms the
+  // timer immediately rather than after the eruption resolves, so a warning
+  // that never gets to erupt (round ends first, see hazardErupt's own
+  // guard) can't leave the schedule stuck.
+  triggerHazardWarning() {
+    const angle = Math.random() * Math.PI * 2;
+    // Up to 85% of the platform radius — comfortably inside the boundary,
+    // and not so tight to center that every eruption lands in the one spot
+    // players are already avoiding by default.
+    const dist = Math.random() * this.map.radius * 0.85;
+    const x = Math.cos(angle) * dist;
+    const z = Math.sin(angle) * dist;
+
+    this.io.emit('hazardWarning', { x, z, warningMs: HAZARD_WARNING_MS });
+    this.scheduleNextHazard();
+    setTimeout(() => this.hazardErupt(x, z), HAZARD_WARNING_MS);
+  }
+
+  // The actual eruption: hits every alive, non-held player within
+  // HAZARD_RADIUS with a shoveHit-shaped knockback (sourceId null, power
+  // 'hazard', since no player threw this) radiating outward from (x, z).
+  // Mirrors handleShove's own hit loop, including the deferred-drop pattern
+  // for anyone caught mid-hold.
+  hazardErupt(x, z) {
+    // The round can end (but not yet restart — see the comment on tick()'s
+    // hazard check) in the HAZARD_WARNING_MS between the warning and this
+    // firing; a stale eruption from an already-over round must not still
+    // hit anyone once a new one starts.
+    if (!this.roundActive) return;
+
+    this.io.emit('hazardTrigger', { x, z });
+
+    const holdersToDrop = [];
+    for (const target of this.players.values()) {
+      if (!target.alive || target.heldBy !== null) continue;
+      const dx = target.x - x;
+      const dz = target.z - z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > HAZARD_RADIUS) continue;
+
+      // Same normalize-and-push-outward pattern as handleShove's hit loop;
+      // standing exactly on the eruption point (dist ~ 0) picks a random
+      // direction instead, since dx/dz would otherwise both be ~0.
+      let ndx, ndz;
+      if (dist < 0.0001) {
+        const a = Math.random() * Math.PI * 2;
+        ndx = Math.cos(a);
+        ndz = Math.sin(a);
+      } else {
+        ndx = dx / dist;
+        ndz = dz / dist;
+      }
+
+      this.io.emit('shoveHit', {
+        sourceId: null,
+        targetId: target.id,
+        dirX: ndx,
+        dirZ: ndz,
+        force: HAZARD_FORCE,
+        upForce: HAZARD_UP_FORCE,
+        power: 'hazard'
+      });
+      // 'hazard' sentinel (not a real player id) so checkEliminations still
+      // credits a fall shortly after this as attributable — this.players.get
+      // on it safely resolves to undefined (no killer), but lastHitPower
+      // still correctly reads 'hazard' on the resulting playerEliminated
+      // event instead of null, distinguishing "the volcano got them" from
+      // an unassisted fall.
+      target.lastHitBy = 'hazard';
+      target.lastHitPower = 'hazard';
+      target.lastHitAt = Date.now();
+
+      if (target.holding !== null) holdersToDrop.push(target.id);
+    }
+    for (const holderId of holdersToDrop) this.dropHeld(holderId);
   }
 
   spawnPoint(index, total) {
@@ -58,6 +158,10 @@ export class GameRoom {
       lastShoveTime: 0,
       chargedHitStreak: 0,
       specialReady: false,
+      // Kills landed by this player in the CURRENT round only, reset every
+      // restartRound() — drives the client's combo/streak text (2+ in a
+      // row without dying gets called out), not a lifetime/session stat.
+      killsThisRound: 0,
       // Grab/throw: heldBy is the id of whoever is holding THIS player (or
       // null); holding is the id of whoever THIS player is holding (or
       // null). At most one of a player's own {holding, heldBy} pair is ever
@@ -463,12 +567,18 @@ export class GameRoom {
         // arrives.
         const recentHit = player.lastHitBy && (Date.now() - player.lastHitAt < KILL_ATTRIBUTION_MS);
         const killer = recentHit ? this.players.get(player.lastHitBy) : null;
+        // Combo/streak text: counts kills landed by the same player without
+        // dying in between (checked here, once per elimination, rather than
+        // wherever a hit lands) so it only ever advances on an actual kill,
+        // never on a hit that merely knocks someone around.
+        if (killer) killer.killsThisRound += 1;
         this.io.emit('playerEliminated', {
           id: player.id,
           name: player.name,
           killerId: killer ? killer.id : null,
           killerName: killer ? killer.name : null,
-          power: recentHit ? player.lastHitPower : null
+          power: recentHit ? player.lastHitPower : null,
+          killerKillCount: killer ? killer.killsThisRound : null
         });
       }
     }
@@ -506,6 +616,9 @@ export class GameRoom {
     }
 
     this.map = getMap(nextMapId(this.map.id));
+    // Re-roll (or clear, if the new map has no hazard) against the map that
+    // was just picked, not whatever the previous one had scheduled.
+    this.scheduleNextHazard();
 
     let index = 0;
     for (const player of this.players.values()) {
@@ -525,6 +638,9 @@ export class GameRoom {
       // carry over as a surprise opening move.
       player.chargedHitStreak = 0;
       player.specialReady = false;
+      // Fresh round, fresh combo/streak count too — a rampage last round
+      // shouldn't carry a phantom head start into the next one.
+      player.killsThisRound = 0;
       // Fresh round, no stale kill attribution either.
       player.lastHitBy = null;
       player.lastHitPower = null;
@@ -574,6 +690,13 @@ export class GameRoom {
       this.resolveCollisions();
       this.checkEliminations();
       this.updateHeldPlayers();
+      // Gated on roundActive so a hazard warning can never START outside an
+      // active round — combined with hazardErupt's own roundActive guard,
+      // that means a hazard already in flight when a round ends is the only
+      // way one can ever fail to erupt, never one starting fresh mid-break.
+      if (this.nextHazardAt !== null && Date.now() >= this.nextHazardAt) {
+        this.triggerHazardWarning();
+      }
     }
     this.io.emit('state', { players: this.serializeAll() });
   }

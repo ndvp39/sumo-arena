@@ -106,6 +106,33 @@ export const MOMENTUM_MAX_MULTIPLIER = 2.2;        // hard cap: momentum can at 
 export const MOMENTUM_GRAB_RANGE_BONUS_PER_UNIT = 0.02;
 export const MOMENTUM_GRAB_RANGE_MAX_MULTIPLIER = 1.4;
 
+// Volcano Pit's environmental hazard (see maps.js's `hazard` field and
+// GameRoom's hazard scheduling): a fireball erupts at a random point on the
+// platform at a random interval, warns everyone briefly first, then hits
+// like an area-effect shove. Fully server-driven — no client input is ever
+// involved in triggering or timing this.
+//
+// Randomized rather than a fixed metronome so it can't be predicted/
+// memorized and simply avoided every time; the range keeps eruptions
+// frequent enough to matter without one being reliably "due" every round.
+export const HAZARD_INTERVAL_MIN_MS = 9000;
+export const HAZARD_INTERVAL_MAX_MS = 15000;
+// How long the telegraph is visible before the eruption actually lands —
+// enough real reaction time to sprint clear from just outside the blast
+// radius, not so long it reads as a non-threat.
+export const HAZARD_WARNING_MS = 1500;
+// Bigger than SHOVE_RANGE (an area-effect eruption, not an arm's reach) but
+// still small enough relative to every map's radius that standing anywhere
+// else on the platform is a real, reachable dodge.
+export const HAZARD_RADIUS = 2.5;
+// Same order of magnitude as a charged shove (not special/throw-tier) —
+// this fires automatically and can't be juked or blocked the way reading an
+// opponent's charge-up can be, so it deliberately hits softer than a
+// deliberately-landed hit of similar telegraph length. Meaningful knockback,
+// not a guaranteed kill from mid-arena on anything but the smallest maps.
+export const HAZARD_FORCE = 38;
+export const HAZARD_UP_FORCE = 13;
+
 export const TICK_RATE_HZ = 30;
 export const ROUND_RESTART_DELAY_MS = 5000;
 export const MIN_PLAYERS_TO_START = 2;

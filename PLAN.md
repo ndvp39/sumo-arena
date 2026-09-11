@@ -700,3 +700,68 @@ before a second, unassisted one could be staged).
   (clear of the joystick/action buttons, which live on the right/bottom
   on mobile), smaller text, and the slide-in/fade-out animation direction
   flipped to match motion coming from the left instead of the right.
+
+## 19. Kill-cam, combo/streak text, and a Volcano Pit environmental hazard
+
+Three additive features from a "what feature ideas do you have" pass,
+picked and prioritized by request (#1, #2, #7 of that list). Built with a
+hard constraint given up front: never touch `player.js`, or the
+`resolveCollisions`/`updateFromClient`/`getMomentumMultiplier` function
+bodies in `GameRoom.js` — that code was hard-won in §17's momentum-
+corruption fix and this pass had no reason to be anywhere near it.
+
+**Combo/streak text.** Each player now tracks `killsThisRound` (§the field
+lives in `GameRoom.addPlayer`, incremented in `checkEliminations`, reset in
+`restartRound` alongside the rest of the per-round state) — kills landed
+without dying in between, not a lifetime stat. `playerEliminated` now
+carries `killerKillCount`, and every client (not just the one on the
+streak) shows an escalating callout — "DOUBLE KILL!", "TRIPLE KILL!",
+"RAMPAGE!" — via a new `#comboText` element, so a rampage reads as a
+match-wide event.
+
+**Kill-cam.** Dying with a known, recent killer (the same attribution
+`GameRoom` already computes for the kill feed, see §17) now cuts the local
+camera to a killer-anchored third-person view (`scene.js#
+updateKillCamera`, fixed `KILLCAM_PITCH`) for a short window before
+falling back to the existing spectator overview (§15) — reuses
+`RemotePlayers.getPosition`, plus a new `getRotation(id)` mirroring it
+exactly, to know where to point. An unassisted fall (no killer, or the
+killer already disconnected) skips straight to the original behavior
+unchanged: watch your own corpse for `SPECTATE_DELAY_MS`, then spectate.
+
+**Volcano Pit fireball hazard.** Data-driven via one new field,
+`hazard: 'fireball'`, on the volcano map entry only (`maps.js`) — no other
+map opts in, and the client has no hardcoded awareness of which maps have
+hazards, it just reacts to `hazardWarning`/`hazardTrigger` events if and
+when they arrive. `GameRoom` picks a random point on the current map
+(up to 85% of its radius) on a randomized interval
+(`HAZARD_INTERVAL_MIN_MS`–`_MAX_MS`), telegraphs it for `HAZARD_WARNING_MS`
+(a pulsing red disc, `scene.js#spawnHazardWarning`, sized to the real
+`HAZARD_RADIUS`), then erupts: every alive, non-held player still within
+`HAZARD_RADIUS` gets a `shoveHit`-shaped hit (`power: 'hazard'`,
+`sourceId: null`) radiating outward from the eruption point, mirroring
+`handleShove`'s own hit loop including its deferred-drop pattern for
+anyone caught holding a captive. `lastHitBy` uses a `'hazard'` sentinel
+(not a real player id) so a resulting fall still attributes correctly on
+the kill feed ("the volcano got them") without a `killerId`. The schedule
+re-arms itself on every map swap (`restartRound`) and is cleared entirely
+on any non-hazard map, so a round on Classic never ticks toward an
+eruption it could never have.
+
+**Process and verification.** Built by one forked implementer agent, then
+independently checked by a second forked verifier (the same two-agent
+pattern as every substantial feature this session) that re-derived its own
+fresh raw-socket tests rather than trusting the self-report, specifically
+including a byte-for-byte diff of the three protected function bodies to
+confirm the hard constraint actually held (it did — the entire diff is
+five purely-additive hunks, zero touches to `player.js` or the protected
+functions). The verifier found and fixed one real bug: `#comboText` was
+positioned at `top: 20%`, which overlapped `#banner`'s own fixed `~96–191px`
+span on common viewport heights — a player who both died and completed a
+combo in the same instant would see their "Eliminated" banner and "DOUBLE
+KILL!" collide. Fixed to a fixed-pixel offset (`top: 235px`, comfortably
+clear of banner's tallest state), matching `#banner`'s own idiom rather
+than the percentage that caused the bug. I then personally re-read the
+full `GameRoom.js`/`maps.js` diff and the client-side kill-cam/combo-text
+wiring myself before shipping, confirming the verifier's report against
+the actual on-disk code rather than taking it at face value.

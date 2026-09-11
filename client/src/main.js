@@ -25,6 +25,7 @@ const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
 const howToPlayEl = document.getElementById('howToPlay');
 const killFeedEl = document.getElementById('killFeed');
+const comboTextEl = document.getElementById('comboText');
 
 // The one place the full control list lives — in-game hints (#controlsHint,
 // touch button labels) stay bare key names on the assumption this was seen
@@ -85,7 +86,10 @@ const keys = { w: false, a: false, s: false, d: false, space: false, sprint: fal
 // see loop()'s dt-scaling and triggerHitStop below. Bigger hits pause
 // longer, and it fires whether you landed the hit or took it, so both
 // sides of an exchange feel the weight of it.
-const HIT_STOP_MS = { normal: 35, charged: 65, special: 95, throw: 120, drop: 0 };
+// 'hazard' (Volcano Pit fireball, see GameRoom#hazardErupt) sits between
+// charged and special — matches HAZARD_FORCE being deliberately tuned to
+// roughly charged-shove weight (see server/constants.js's comment on why).
+const HIT_STOP_MS = { normal: 35, charged: 65, special: 95, throw: 120, drop: 0, hazard: 60 };
 let hitStopMs = 0;
 function triggerHitStop(power) {
   hitStopMs = Math.max(hitStopMs, HIT_STOP_MS[power] ?? 35);
@@ -133,6 +137,16 @@ function clearSpectateTimer() {
     spectateTimer = null;
   }
 }
+
+// Kill-cam: replaces the SPECTATE_DELAY_MS "watch your own corpse" beat
+// with a brief third-person look at whoever just eliminated you, but only
+// when there's a known, currently-connected killer to look at (see
+// onEliminated) — otherwise the existing corpse-then-spectate flow is
+// completely unchanged. killCamKillerId is the id to point the camera at
+// while set; killCamUntil is the performance.now() timestamp it expires at.
+const KILLCAM_DURATION_MS = 1800;
+let killCamKillerId = null;
+let killCamUntil = 0;
 
 // Last transform we told the server about — used to isolate genuine
 // server-side corrections (collision push-apart) from ordinary network
@@ -234,6 +248,26 @@ function addKillFeedEntry(victimName, killerName, power) {
     row.classList.add('fading');
     setTimeout(() => row.remove(), 400);
   }, KILL_FEED_LIFETIME_MS);
+}
+
+// Combo/streak callout — broadcast to every client (see the server's
+// killerKillCount on playerEliminated), not just the player on the streak,
+// matching the kill-feed's own "everyone sees it" philosophy. 5+ falls back
+// to a generic 'RAMPAGE!' rather than growing a lookup table indefinitely.
+const COMBO_LABELS = { 2: 'DOUBLE KILL!', 3: 'TRIPLE KILL!', 4: 'QUAD KILL!' };
+const COMBO_TEXT_MS = 1800;
+let comboTextTimer = null;
+function showComboText(count) {
+  if (!comboTextEl || count < 2) return;
+  comboTextEl.textContent = COMBO_LABELS[count] || 'RAMPAGE!';
+  // Force a reflow before re-adding 'show' so back-to-back combos (someone
+  // on a real rampage) each re-trigger the pop-in transition instead of the
+  // second one silently no-op'ing because the class was already set.
+  comboTextEl.classList.remove('show');
+  void comboTextEl.offsetWidth;
+  comboTextEl.classList.add('show');
+  if (comboTextTimer) clearTimeout(comboTextTimer);
+  comboTextTimer = setTimeout(() => comboTextEl.classList.remove('show'), COMBO_TEXT_MS);
 }
 
 function showBanner(text, sub = '') {
@@ -369,6 +403,7 @@ function startGame(name) {
         if (data.power === 'charged') sceneManager.shake(0.25, 250);
         else if (data.power === 'special') sceneManager.shake(0.45, 400);
         else if (data.power === 'throw') sceneManager.shake(0.6, 500);
+        else if (data.power === 'hazard') sceneManager.shake(0.35, 300);
         // 'drop' (an un-thrown release, see GameRoom#dropHeld) is
         // deliberately gentle — no shake, it's an "oops" not a hit.
       }
@@ -401,17 +436,42 @@ function startGame(name) {
       // above (power: 'throw' | 'drop') — this event is purely for
       // clearing the "You've been grabbed!" banner and local flag state.
     },
-    onEliminated: ({ id, name, killerId, killerName, power }) => {
+    onEliminated: ({ id, name, killerId, killerName, power, killerKillCount }) => {
       playEliminate();
       addKillFeedEntry(name, killerId === id ? null : killerName, power);
+      if (killerKillCount >= 2) showComboText(killerKillCount);
       if (id === selfId) {
         sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
         localPlayer.setAlive(false);
         controlsEnabled = false;
         showBanner('Eliminated', 'Spectating...');
         clearSpectateTimer();
-        spectateTimer = setTimeout(() => { isSpectating = true; }, SPECTATE_DELAY_MS);
+
+        // Kill-cam only when there's a real, currently-connected killer to
+        // look at (remotePlayers has no entry for someone who's already
+        // disconnected) — otherwise this is exactly the old flow: watch
+        // your own corpse for SPECTATE_DELAY_MS, then spectate.
+        const killerPos = killerId ? remotePlayers.getPosition(killerId) : null;
+        if (killerPos) {
+          killCamKillerId = killerId;
+          killCamUntil = performance.now() + KILLCAM_DURATION_MS;
+          spectateTimer = setTimeout(() => {
+            killCamKillerId = null;
+            isSpectating = true;
+          }, KILLCAM_DURATION_MS);
+        } else {
+          spectateTimer = setTimeout(() => { isSpectating = true; }, SPECTATE_DELAY_MS);
+        }
       }
+    },
+    onHazardWarning: ({ x, z, warningMs }) => {
+      sceneManager.spawnHazardWarning(x, z, warningMs);
+    },
+    onHazardTrigger: ({ x, z }) => {
+      sceneManager.spawnHazardEruption(x, z);
+      // Knockback for whoever's actually hit arrives separately via the
+      // existing onShoveHit above (power: 'hazard', see GameRoom#hazardErupt)
+      // — this handler only owns the eruption's visual/audio side.
     },
     onRoundOver: (data) => {
       controlsEnabled = false;
@@ -425,6 +485,7 @@ function startGame(name) {
       clearRestartCountdown();
       clearSpectateTimer();
       isSpectating = false;
+      killCamKillerId = null;
       hideBanner();
       sceneManager.buildArena(data.map);
       mapNameEl.textContent = `Map: ${data.map.name}`;
@@ -445,6 +506,7 @@ function startGame(name) {
       clearRestartCountdown();
       clearSpectateTimer();
       isSpectating = false;
+      killCamKillerId = null;
       showBanner('Disconnected', 'Trying to reconnect...');
     }
   });
@@ -650,6 +712,18 @@ function loop(now) {
 
     if (isSpectating) {
       sceneManager.updateSpectatorCamera(localPlayer.arenaRadius, dt);
+    } else if (killCamKillerId && performance.now() < killCamUntil) {
+      const killerPos = remotePlayers.getPosition(killCamKillerId);
+      const killerYaw = remotePlayers.getRotation(killCamKillerId);
+      if (killerPos && killerYaw !== null) {
+        sceneManager.updateKillCamera(killerPos, killerYaw, dt);
+      } else {
+        // Killer disconnected mid-kill-cam — bail out to spectating early
+        // rather than waiting out a timer pointed at someone who's gone.
+        killCamKillerId = null;
+        clearSpectateTimer();
+        isSpectating = true;
+      }
     } else {
       sceneManager.updateCamera(localPlayer.position, cameraYaw, cameraPitch, dt);
     }
