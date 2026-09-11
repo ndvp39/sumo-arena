@@ -28,6 +28,7 @@ export class Network {
     this.socket.on('shoveAction', (data) => handlers.onShoveAction?.(data));
     this.socket.on('shoveHit', (data) => handlers.onShoveHit?.(data));
     this.socket.on('specialProgress', (data) => handlers.onSpecialProgress?.(data));
+    this.socket.on('grabAction', (data) => handlers.onGrabAction?.(data));
     this.socket.on('grabbed', (data) => handlers.onGrabbed?.(data));
     this.socket.on('released', (data) => handlers.onReleased?.(data));
     this.socket.on('playerEliminated', (data) => handlers.onEliminated?.(data));

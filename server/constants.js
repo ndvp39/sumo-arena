@@ -67,8 +67,20 @@ export const HOLD_MAX_MS = 5000;
 // and then a throw is a real two-step commitment, so the payoff needs to
 // read as bigger than even the special kick and send the thrown player
 // flying a clearly bigger distance than any other hit in the game.
-export const THROW_FORCE = 85;
-export const THROW_UP_FORCE = 22;
+//
+// These numbers look small next to SHOVE_FORCE/CHARGED_SHOVE_FORCE/etc.
+// because a throw is real ballistic physics (see client/src/player.js's
+// knockbackBallistic), not the same decaying-slide model every other hit
+// uses: this IS the constant flight velocity for the whole arc, never
+// decayed away mid-air, so it doesn't need a shove's much bigger number to
+// end up going further. At these values (with a launch height of
+// HELD_OFFSET_Y) a base-momentum throw arcs to roughly a normal jump's
+// height x2 and covers ~18 units before landing — a fast/falling throw
+// (see GameRoom#throwHeldPlayer's momentum split) covers dramatically
+// more ground with a comparatively smaller height increase, matching a
+// real thrown object rather than a floaty hang.
+export const THROW_FORCE = 14;
+export const THROW_UP_FORCE = 11;
 // Ending a hold WITHOUT a throw (timeout, or the holder getting shoved or
 // eliminated) reads as "dropped", not "attacked" — a much gentler impulse
 // than even a normal shove.

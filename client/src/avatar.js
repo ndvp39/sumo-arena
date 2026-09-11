@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS, WALK_CYCLE_HZ_PER_SPEED } from './constants.js';
+import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS, GRAB_ANIM_MS, WALK_CYCLE_HZ_PER_SPEED } from './constants.js';
 
 // Animation profile per shove power tier. 'special' swings both arms back
 // and both legs forward together (a two-legged flying kick), and every
@@ -7,12 +7,16 @@ import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS, WALK_CYCLE_
 // windup/impact reads clearly from a distance, not just up close. 'throw'
 // (grab-and-throw, see GameRoom#throwHeldPlayer) swings the arms furthest
 // of all — a big two-handed heave — with its own hot color so it reads as
-// distinct from charged's gold and special's cyan.
+// distinct from charged's gold and special's cyan. 'grab' is a reach, not
+// a hit — no glow (nothing was struck), and it uses a different animation
+// SHAPE entirely (see the reach-hold-retract branch in updateAvatar) since
+// a punch's snap-out-and-back doesn't read as "trying to catch someone".
 const POWER_ANIM = {
   normal:  { duration: PUNCH_ANIM_MS,        armSwing: Math.PI / 2.1, legSwing: 0,            glow: null },
   charged: { duration: CHARGED_PUNCH_ANIM_MS, armSwing: Math.PI / 1.7, legSwing: 0,            glow: 0xffcc33 },
   special: { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 2.5, legSwing: Math.PI / 2.4, glow: 0x66e0ff },
-  throw:   { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 1.5, legSwing: 0,            glow: 0xff5522 }
+  throw:   { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 1.5, legSwing: 0,            glow: 0xff5522 },
+  grab:    { duration: GRAB_ANIM_MS,          armSwing: Math.PI / 2.6, legSwing: 0,            glow: null }
 };
 
 // Walk/run locomotion cycle — see updateAvatar's walk-cycle branch. Legs
@@ -163,7 +167,15 @@ export function updateAvatar(avatar, now, dt, state = {}) {
 
   if (punchActive) {
     const t = elapsed / cfg.duration;
-    const s = Math.sin(t * Math.PI);
+    // Every impact tier (normal/charged/special/throw) uses a quick
+    // snap-out-and-back sine — reads as a sudden strike. 'grab' isn't a
+    // strike, so it gets its own reach-hold-retract shape instead: ease
+    // out to full reach, hold there for a beat (arms out like actually
+    // trying to catch someone), then ease back — clearly a different kind
+    // of motion at a glance, not just a smaller/slower punch.
+    const s = avatar.punchPower === 'grab'
+      ? (t < 0.35 ? t / 0.35 : t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3)
+      : Math.sin(t * Math.PI);
     const armAngle = -s * cfg.armSwing;
     const legAngle = -s * cfg.legSwing;
     leftArmPivot.rotation.x = armAngle;

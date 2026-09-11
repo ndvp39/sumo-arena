@@ -221,8 +221,21 @@ export class GameRoom {
     // A held player's transform is fully server-driven (see
     // updateHeldPlayers) — their own client isn't even simulating physics
     // while held, but ignore anything it sends anyway, same principle as
-    // ignoring a dead player's moves.
-    if (!player || !player.alive || player.heldBy !== null) return;
+    // ignoring a dead player's moves. Also ignore anything received while
+    // the round itself isn't active (the post-roundOver freeze before
+    // restartRound runs): a player who's still alive but mid-fall the
+    // instant the round ends — because the last OTHER player was
+    // eliminated first — never gets their own `alive` flipped false,
+    // since checkEliminations stops running the moment roundActive does
+    // (see tick()). Without this guard they'd keep freely streaming an
+    // ever-more-negative Y for the whole restart delay, and a stale
+    // in-flight packet landing right after restartRound() resets everyone
+    // to spawn would snap them straight back into "still falling"
+    // territory and instantly re-eliminate them in the new round — the
+    // same failure mode a prior fix already solved for an actually-dead
+    // player (see PLAN.md), just reachable here through a path where the
+    // player is never marked dead at all.
+    if (!player || !player.alive || player.heldBy !== null || !this.roundActive) return;
     if (typeof data.x !== 'number' || typeof data.y !== 'number' || typeof data.z !== 'number') return;
 
     // Derive real velocity from how far they actually moved since their
@@ -280,6 +293,14 @@ export class GameRoom {
 
     const now = Date.now();
     if (now - pusher.lastGrabTime < GRAB_COOLDOWN_MS) return;
+
+    // Broadcast the attempt itself, unconditionally, the same way
+    // handleShove announces 'shoveAction' before it knows whether anything
+    // is actually in range — the reaching-for-someone lunge (see
+    // client/src/avatar.js's 'grab' animation) is feedback that a grab was
+    // tried, not confirmation that it landed; a whiff still shows the
+    // attempt, exactly like a whiffed shove still shows the swing.
+    this.io.emit('grabAction', { playerId: id });
 
     // A fast-moving grab reaches a bit further — reads as a diving/lunging
     // tackle rather than a bigger hit, since a grab has no "force" of its
@@ -350,8 +371,17 @@ export class GameRoom {
     const dirX = Math.sin(holder.rotY);
     const dirZ = Math.cos(holder.rotY);
     // A holder who sprinted (or jumped) into the throw sends their captive
-    // flying noticeably further — same momentum system as a shove.
+    // flying noticeably further — same momentum system as a shove. Unlike
+    // every other power tier, though, a throw is real ballistic flight
+    // (see client/src/player.js's knockbackBallistic) where the vertical
+    // component directly controls how long — and therefore how far — the
+    // flight lasts. Applying the full momentum multiplier to BOTH
+    // components would make a fast throw balloon into an unrealistically
+    // tall arc; real momentum from a sprint/fall should mostly show up as
+    // covering more ground, not launching higher, so only half the bonus
+    // reaches the vertical component here.
     const momentum = this.getMomentumMultiplier(holder);
+    const upMomentum = 1 + (momentum - 1) * 0.5;
 
     this.io.emit('shoveAction', { playerId: holderId, power: 'throw' });
     this.io.emit('shoveHit', {
@@ -359,7 +389,7 @@ export class GameRoom {
       targetId,
       dirX, dirZ,
       force: THROW_FORCE * momentum,
-      upForce: THROW_UP_FORCE * momentum,
+      upForce: THROW_UP_FORCE * upMomentum,
       power: 'throw'
     });
     target.lastHitBy = holderId;

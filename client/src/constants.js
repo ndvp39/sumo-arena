@@ -25,6 +25,10 @@ export const SHOVE_COOLDOWN_MS = 650;
 export const PUNCH_ANIM_MS = 300;
 export const CHARGED_PUNCH_ANIM_MS = 450;
 export const SPECIAL_KICK_ANIM_MS = 550;
+// The reach-for-a-grab lunge (see avatar.js's 'grab' POWER_ANIM entry) —
+// plays on every grab attempt, hit or miss, mirroring how a shove's swing
+// always plays regardless of whether it connects.
+export const GRAB_ANIM_MS = 380;
 
 // Hold the shove input this long for a charged shove instead of a tap.
 export const CHARGE_HOLD_MS = 2000;

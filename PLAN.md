@@ -765,3 +765,91 @@ than the percentage that caused the bug. I then personally re-read the
 full `GameRoom.js`/`maps.js` diff and the client-side kill-cam/combo-text
 wiring myself before shipping, confirming the verifier's report against
 the actual on-disk code rather than taking it at face value.
+
+## 20. Real ballistic throw physics, a round-restart edge case, and a grab lunge
+
+Three bug reports/requests handled in one pass, investigated and fixed
+directly (no agents — small, well-understood scope).
+
+**Throw physics were never real physics.** A thrown player's horizontal
+knockback used the same exponential-decay model as every other hit
+(`Math.exp(-KNOCKBACK_DECAY * dt)` applied every frame), which drives
+horizontal velocity to ~0 within about 1 second regardless of how big the
+initial force was — but the vertical component follows real, undecayed
+gravity for the whole arc. With the old `THROW_UP_FORCE = 22`, total
+airtime was ~2.3s, meaning the last ~1 second of every throw was spent
+just hanging at a huge height (peak ~14 units — over 6x a normal jump)
+with almost no horizontal motion left: exactly "too high, not far
+enough." Fixed by giving a throw specifically (not shoves/kicks/hazards,
+which keep their existing decay-based feel entirely unchanged) real
+ballistic flight: `LocalPlayer` (`client/src/player.js`) now tracks a
+`knockbackBallistic` flag set only by `applyKnockback`'s new `ballistic`
+argument (passed `true` only when `data.power === 'throw'`, wired in
+`main.js`'s `onShoveHit`); while it's set and the player is still
+airborne, horizontal knockback doesn't decay at all — constant velocity,
+like a real thrown object with no air resistance — and only starts
+decaying again once they've actually landed. `THROW_FORCE`/
+`THROW_UP_FORCE` were recalibrated for this new model (85/22 → 14/11) —
+much smaller raw numbers, because they're no longer fighting a decay that
+was quietly eating most of their effect; base case now arcs to about 2x a
+normal jump's height and covers ~18 units in ~1.3s, a snappier and more
+dramatic-reading arc than the old floaty 2.3s hang. Also split the
+momentum bonus for a throw specifically (`GameRoom#throwHeldPlayer`): full
+momentum scaling on the horizontal force, only half-strength
+(`1 + (momentum-1)*0.5`) on the vertical upForce — a sprinting throw
+should mostly send someone much FARTHER (real horizontal momentum
+transfer), not proportionally much higher too, which is what applying the
+same multiplier to both would do given how much upForce alone controls
+airtime/height. Verified live: a stationary throw measures exactly 14
+force / 11 upForce on the wire, and a full shove/charged/special
+regression (all base forces unchanged) confirmed the scoped-to-throw-only
+change didn't touch anything else.
+
+**Round-restart edge case: a still-falling survivor could get instantly
+re-eliminated next round.** A real, if rare, bug distinct from — but in
+the same family as — a prior fix (see the earlier commit history):
+`checkEliminations()` only runs while `roundActive` is true (see `tick()`),
+so the moment a round ends because one player was eliminated, the game
+stops checking whether anyone ELSE is still airborne. A second player who
+was legitimately still mid-fall (never crossed `ELIMINATION_Y`) at that
+exact instant never gets their own `alive` flag flipped false — they just
+silently keep "falling" forever from the server's perspective. Two things
+made this dangerous: `updateFromClient` had no check on `roundActive` at
+all, so it kept happily accepting that player's real, ever-more-negative Y
+for the whole 5-second restart delay; and the client's own move-sending
+loop (`main.js`) only gated on `localPlayer.alive` (never false for this
+player) and `isHeld`, not on whether the round was actually still active
+— so it kept transmitting too. A stale in-flight packet from either side
+landing right as `restartRound()` resets everyone to spawn would snap the
+freshly-respawned player straight back into "still falling" territory,
+instantly re-eliminating them in the new round. Fixed on both ends:
+`GameRoom#updateFromClient` now also ignores anything received while
+`!this.roundActive` (server-side defense, closes the window during the
+confirmed-inactive freeze itself), and `main.js`'s send-loop now also
+requires `controlsEnabled` (already flipped false the instant `roundOver`
+arrives, client-side — closing the residual race where a packet is SENT
+during the freeze but arrives late, just after the reopening instant,
+since a real client now stops emitting entirely within one round-trip of
+`roundOver`, a large safety margin against the 5-second delay). Caught by
+my own test script initially failing on exactly this residual race before
+the client-side half of the fix was added — confirmed fixed afterward with
+a realistic (not adversarially-timed) repro: a "survivor" mid-fall when
+the round ends, briefly still streaming a couple of stale packets before
+going quiet, then a clean, single restart with no cascading
+re-elimination.
+
+**Grab lunge.** Pressing the grab input previously did nothing visible at
+all unless it actually caught someone — `GameRoom#handleGrab` never
+broadcast the attempt itself, only a successful `grabbed`. Now it emits a
+new `grabAction` event unconditionally (the moment cooldown/state checks
+pass, before the range scan — mirroring exactly how `handleShove`
+announces `shoveAction` before it knows if anything's in range), so a
+whiff still shows the attempt just like a whiffed shove still shows its
+swing. The client plays a new 'grab' entry in `avatar.js`'s `POWER_ANIM`
+table, but with its own animation SHAPE rather than reusing the existing
+punch/kick/throw snap-out-and-back sine curve: a reach-hold-retract curve
+(ease out to full extension, hold briefly, ease back) that reads as
+"trying to catch someone" rather than a smaller/slower punch. No glow —
+nothing was struck. Verified live: the event fires on both a whiffed and
+a successful grab attempt, and `grabbed` still only fires on an actual
+catch.

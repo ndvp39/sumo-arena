@@ -29,6 +29,12 @@ export class LocalPlayer {
     this.alive = true;
 
     this.knockback = new THREE.Vector3(0, 0, 0);
+    // True only for a real throw (see applyKnockback) — the horizontal
+    // knockback stays at full speed the whole time this is set and the
+    // player is still airborne (real ballistic flight, no air resistance),
+    // instead of decaying away like every other hit's knockback does.
+    // Cleared automatically the moment they actually land (see update()).
+    this.knockbackBallistic = false;
     this.arenaRadius = Infinity; // set via setArenaRadius() once a map is known
     this.serverTarget = null; // latest authoritative x/z, eased toward in update() — not snapped instantly
 
@@ -61,11 +67,15 @@ export class LocalPlayer {
     this.arenaRadius = radius;
   }
 
-  applyKnockback(dirX, dirZ, force, upForce) {
+  // ballistic: true only for a real throw — see the field comment on
+  // knockbackBallistic above for what that changes about the resulting
+  // flight.
+  applyKnockback(dirX, dirZ, force, upForce, ballistic = false) {
     this.knockback.x = dirX * force;
     this.knockback.z = dirZ * force;
     this.velocityY = upForce;
     this.grounded = false;
+    this.knockbackBallistic = ballistic;
   }
 
   playPunch(power = 'normal') {
@@ -184,12 +194,23 @@ export class LocalPlayer {
 
     this._easeTowardServerTarget(dt);
 
-    // Knockback eases out independently of normal movement input.
+    // Knockback eases out independently of normal movement input — except
+    // a ballistic throw (see knockbackBallistic), which keeps its
+    // horizontal velocity fully constant while still airborne, like a
+    // real thrown object with no air resistance, and only starts decaying
+    // once it's actually landed (grounded friction). wasGrounded (captured
+    // at the top of this function, before any of this frame's own
+    // physics) answers "was still flying a moment ago" — using the live
+    // `this.grounded` instead would be ambiguous on the exact frame this
+    // frame's own ground-clamp below is about to decide that.
     this.position.x += this.knockback.x * dt;
     this.position.z += this.knockback.z * dt;
-    const decay = Math.exp(-KNOCKBACK_DECAY * dt);
-    this.knockback.x *= decay;
-    this.knockback.z *= decay;
+    if (!this.knockbackBallistic || wasGrounded) {
+      const decay = Math.exp(-KNOCKBACK_DECAY * dt);
+      this.knockback.x *= decay;
+      this.knockback.z *= decay;
+      this.knockbackBallistic = false;
+    }
 
     this.velocityY -= GRAVITY * dt;
     this.position.y += this.velocityY * dt;
@@ -243,6 +264,7 @@ export class LocalPlayer {
     this.position.set(x, GROUND_Y, z);
     this.velocityY = 0;
     this.knockback.set(0, 0, 0);
+    this.knockbackBallistic = false;
     this.airVelX = 0;
     this.airVelZ = 0;
     this.justLandedIntensity = 0;

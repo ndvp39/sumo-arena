@@ -399,7 +399,10 @@ function startGame(name) {
     },
     onShoveHit: (data) => {
       if (data.targetId === selfId && localPlayer) {
-        localPlayer.applyKnockback(data.dirX, data.dirZ, data.force, data.upForce);
+        // Only a real throw gets true ballistic (no-decay) flight — see
+        // LocalPlayer#applyKnockback — every other power tier keeps its
+        // existing decaying-slide feel exactly as before.
+        localPlayer.applyKnockback(data.dirX, data.dirZ, data.force, data.upForce, data.power === 'throw');
         if (data.power === 'charged') sceneManager.shake(0.25, 250);
         else if (data.power === 'special') sceneManager.shake(0.45, 400);
         else if (data.power === 'throw') sceneManager.shake(0.6, 500);
@@ -414,6 +417,15 @@ function startGame(name) {
       }
     },
     onSpecialProgress: ({ count, threshold, ready }) => updateSpecialUI(count, threshold, ready),
+    // Fires on every grab attempt, hit or miss (see GameRoom#handleGrab) —
+    // a reaching-forward lunge so pressing the grab input always visibly
+    // does something, exactly like a whiffed shove still shows the swing.
+    // A successful grab's onGrabbed (below) fires right after this on the
+    // same input and layers the sustained holding pose on top once caught.
+    onGrabAction: ({ playerId }) => {
+      if (playerId === selfId) localPlayer?.playPunch('grab');
+      else remotePlayers.playPunch(playerId, 'grab');
+    },
     onGrabbed: ({ holderId, targetId }) => {
       playGrab();
       if (targetId === selfId) {
@@ -736,19 +748,28 @@ function loop(now) {
     sendAccumulator += dt;
     if (sendAccumulator >= sendInterval) {
       sendAccumulator = 0;
-      // Only stream position while alive AND not held. The server already
-      // ignores move updates in both cases (GameRoom.updateFromClient), but
-      // there's a race for the alive case: this client keeps free-falling
-      // its own view for the dramatic drop the whole time it's dead/
-      // spectating (which can be several seconds, arbitrarily far below the
-      // map), and a packet sent during that fall can still be in flight
-      // when the round restarts and the server flips this player back to
-      // alive - at which point that stale packet would be accepted,
-      // snapping the freshly-spawned player back into "still falling"
-      // territory and instantly re-eliminating them, restarting the round
-      // again. Never sending while dead/held means no such stale packet
-      // can ever be in flight to race against a respawn or a release.
-      if (localPlayer.alive && !localPlayer.isHeld) {
+      // Only stream position while alive, not held, AND the round is
+      // actually active. The server already ignores move updates in all
+      // three cases (GameRoom.updateFromClient), but there's a race: this
+      // client keeps simulating physics (falling, knockback) every frame
+      // regardless of controlsEnabled — only WASD input is gated by it,
+      // gravity isn't — for however long a dramatic drop or a round-over
+      // freeze lasts, and a packet sent during that window can still be in
+      // flight when the round restarts and the server flips this player
+      // back to a fresh spawn - at which point that stale packet would be
+      // accepted, snapping them back into "still falling" territory and
+      // instantly re-eliminating them, restarting the round again. This
+      // isn't only reachable via personally dying: a player who's still
+      // alive but genuinely mid-fall the instant the round ends because
+      // the OTHER player was eliminated first never gets their own
+      // `alive` flipped false at all (the server stops checking the
+      // moment the round ends), so `controlsEnabled` — false from the
+      // instant `roundOver` arrives, well before the server's own
+      // multi-second restart delay elapses — is what actually closes this
+      // for them, not `alive`. Never sending in any of these states means
+      // no such stale packet can ever be in flight to race against a
+      // respawn or a release.
+      if (controlsEnabled && localPlayer.alive && !localPlayer.isHeld) {
         network.sendMove({
           x: localPlayer.position.x,
           y: localPlayer.position.y,
