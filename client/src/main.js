@@ -22,6 +22,37 @@ const specialPipEls = specialMeterEl ? [...specialMeterEl.querySelectorAll('.pip
 const specialHintEl = document.getElementById('specialHint');
 const desktopChargeRing = document.getElementById('desktopChargeRing');
 const desktopChargeFill = document.getElementById('desktopChargeFill');
+const howToPlayEl = document.getElementById('howToPlay');
+
+// The one place the full control list lives — in-game hints (#controlsHint,
+// touch button labels) stay bare key names on the assumption this was seen
+// once before pressing PLAY. Device-aware since a touch player doesn't have
+// a Shift key or a mouse to read about.
+const DESKTOP_CONTROLS = [
+  ['WASD / ←↑↓→', 'Move'],
+  ['SHIFT', 'Sprint'],
+  ['SPACE', 'Jump'],
+  ['F / click', 'Shove (hold = charge)'],
+  ['Q / right-click', 'Special (after 3 charged hits)'],
+  ['E', 'Grab & carry (shove = throw)'],
+  ['MOUSE', 'Look around']
+];
+const TOUCH_CONTROLS = [
+  ['Joystick', 'Move (push far = run)'],
+  ['Drag screen', 'Look around'],
+  ['JUMP', 'Jump'],
+  ['SHOVE', 'Shove (hold = charge)'],
+  ['KICK', 'Special (glows when ready)'],
+  ['GRAB', 'Grab & carry (SHOVE = throw)']
+];
+function renderHowToPlay() {
+  if (!howToPlayEl) return;
+  const rows = isTouchDevice() ? TOUCH_CONTROLS : DESKTOP_CONTROLS;
+  howToPlayEl.innerHTML = rows
+    .map(([key, action]) => `<span class="key">${key}</span><span class="action">${action}</span>`)
+    .join('');
+}
+renderHowToPlay();
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -70,6 +101,22 @@ let cameraPitch = 0.25;
 
 let restartCountdownTimer = null;
 
+// Spectator overview: after being eliminated, the camera stays on the
+// player's own falling/dying body for a moment (so the death effect
+// actually gets seen) before easing up into a high overview of the whole
+// arena — so there's something to watch for the rest of the round instead
+// of just staring at wherever your corpse settled. See loop()'s camera
+// branch and sceneManager.updateSpectatorCamera.
+const SPECTATE_DELAY_MS = 1800;
+let isSpectating = false;
+let spectateTimer = null;
+function clearSpectateTimer() {
+  if (spectateTimer) {
+    clearTimeout(spectateTimer);
+    spectateTimer = null;
+  }
+}
+
 // Last transform we told the server about — used to isolate genuine
 // server-side corrections (collision push-apart) from ordinary network
 // latency when the state broadcast echoes our own position back to us.
@@ -106,13 +153,13 @@ function updateSpecialUI(count, threshold, ready) {
   specialReady = ready;
   specialPipEls.forEach((pip, i) => pip.classList.toggle('filled', i < count));
   specialMeterEl?.classList.toggle('ready', ready);
+  // Minimal on purpose: the pips already show progress visually, so the
+  // text only needs to add the one thing they can't — what to press. A
+  // count ("2 / 3") reads just as clearly as a full sentence here.
   if (specialHintEl) {
-    if (ready) {
-      specialHintEl.textContent = isTouchDevice() ? 'SPECIAL READY — tap the kick button!' : 'SPECIAL READY — press Q!';
-    } else {
-      const remaining = threshold - count;
-      specialHintEl.textContent = `Land ${remaining} more charged shove${remaining === 1 ? '' : 's'}`;
-    }
+    specialHintEl.textContent = ready
+      ? (isTouchDevice() ? 'READY — tap KICK' : 'READY — press Q')
+      : `${count} / ${threshold}`;
   }
   setSpecialReady(ready);
 }
@@ -256,7 +303,7 @@ function startGame(name) {
     onSpecialProgress: ({ count, threshold, ready }) => updateSpecialUI(count, threshold, ready),
     onGrabbed: ({ holderId, targetId }) => {
       if (targetId === selfId) {
-        showBanner("You've been grabbed!", 'Hope for a rescue or brace for a throw...');
+        showBanner('Grabbed!', 'Brace yourself...');
       } else if (holderId === selfId) {
         // localPlayer.holding itself is set from the next 'state' broadcast
         // (see onState) — this is just the immediate flavor text.
@@ -280,7 +327,9 @@ function startGame(name) {
         sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
         localPlayer.setAlive(false);
         controlsEnabled = false;
-        showBanner('You were eliminated', 'Spectating — next round starts soon');
+        showBanner('Eliminated', 'Spectating...');
+        clearSpectateTimer();
+        spectateTimer = setTimeout(() => { isSpectating = true; }, SPECTATE_DELAY_MS);
       }
     },
     onRoundOver: (data) => {
@@ -292,6 +341,8 @@ function startGame(name) {
     },
     onRoundStart: (data) => {
       clearRestartCountdown();
+      clearSpectateTimer();
+      isSpectating = false;
       hideBanner();
       sceneManager.buildArena(data.map);
       mapNameEl.textContent = `Map: ${data.map.name}`;
@@ -310,6 +361,8 @@ function startGame(name) {
     onDisconnect: () => {
       controlsEnabled = false;
       clearRestartCountdown();
+      clearSpectateTimer();
+      isSpectating = false;
       showBanner('Disconnected', 'Trying to reconnect...');
     }
   });
@@ -487,7 +540,11 @@ function loop(now) {
 
   if (localPlayer) {
     localPlayer.update(controlsEnabled ? keys : { w: false, a: false, s: false, d: false, space: false, sprint: false }, dt, cameraYaw);
-    sceneManager.updateCamera(localPlayer.position, cameraYaw, cameraPitch, dt);
+    if (isSpectating) {
+      sceneManager.updateSpectatorCamera(localPlayer.arenaRadius, dt);
+    } else {
+      sceneManager.updateCamera(localPlayer.position, cameraYaw, cameraPitch, dt);
+    }
     // Only meaningful for the local player — remote sprinters don't affect
     // this client's own camera. Gated on isHeld too since a held player's
     // keys.sprint doesn't drive anything (LocalPlayer#update ignores it

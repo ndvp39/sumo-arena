@@ -71,6 +71,32 @@ export const DROP_UP_FORCE = 2;
 // the server never actually applies this multiplier to anything.
 export const SPRINT_MULTIPLIER = 1.7;
 
+// Momentum-based combat: a shove/kick/throw hits harder the faster the
+// attacker was actually moving (including falling) the instant they threw
+// it — running into a shove, or a mid-air shove/throw while still falling
+// from a jump, both hit noticeably bigger. Derived server-side from real
+// position deltas between move packets (see GameRoom#updateFromClient),
+// never from a client-reported number, so it can't be forged by sending a
+// fake velocity — only by actually covering ground that fast, which is
+// already bounded by MOVE_SPEED/SPRINT_MULTIPLIER (or a real fall).
+//
+// Capped generously above legit sprint/fall speeds (not tightly at them)
+// so a knockback-assisted burst of speed — genuinely moving fast because
+// you just got shoved — still counts; the caps exist to stop a broken or
+// malicious client claiming an instant teleport as "infinite speed", not
+// to nickel-and-dime legitimate momentum.
+export const MOMENTUM_MAX_TRACKED_SPEED = 20;      // horizontal, units/sec
+export const MOMENTUM_MAX_TRACKED_FALL_SPEED = 25; // vertical (falling), units/sec
+export const MOMENTUM_SPEED_BONUS_PER_UNIT = 0.05; // +5% force per unit/sec of horizontal speed
+export const MOMENTUM_FALL_BONUS_PER_UNIT = 0.03;  // +3% force per unit/sec of downward speed
+export const MOMENTUM_MAX_MULTIPLIER = 2.2;        // hard cap: momentum can at most ~2.2x base force
+
+// A grab benefits too, but it has no "force" to scale — instead a fast
+// attacker gets a longer effective reach, reading as a diving/lunging
+// tackle rather than a bigger hit.
+export const MOMENTUM_GRAB_RANGE_BONUS_PER_UNIT = 0.02;
+export const MOMENTUM_GRAB_RANGE_MAX_MULTIPLIER = 1.4;
+
 export const TICK_RATE_HZ = 30;
 export const ROUND_RESTART_DELAY_MS = 5000;
 export const MIN_PLAYERS_TO_START = 2;

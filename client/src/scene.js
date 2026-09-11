@@ -539,6 +539,28 @@ export class SceneManager {
     this.camera.lookAt(targetPos.x, targetPos.y + 1.2, targetPos.z);
   }
 
+  // High overview of the whole arena, eased into from wherever the camera
+  // currently is (same lerp style as updateCamera) rather than cutting
+  // instantly — used while spectating after elimination, see main.js. A
+  // slight backward offset (not a pure straight-down 90°) reads better
+  // than a flat top-down view: you can still tell players apart by height/
+  // shape instead of everyone flattening into indistinguishable dots.
+  updateSpectatorCamera(mapRadius, dt) {
+    const height = mapRadius * 3;
+    const backOffset = mapRadius * 0.9;
+    this._desiredCamPos.set(0, height, backOffset);
+    const alpha = 1 - Math.pow(0.0001, dt);
+    this.camera.position.lerp(this._desiredCamPos, alpha);
+
+    if (Math.abs(this.camera.fov - this._baseFov) > 0.02) {
+      const fovAlpha = 1 - Math.pow(0.0005, dt);
+      this.camera.fov += (this._baseFov - this.camera.fov) * fovAlpha;
+      this.camera.updateProjectionMatrix();
+    }
+
+    this.camera.lookAt(0, 0, 0);
+  }
+
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();

@@ -219,7 +219,39 @@
       letter-spacing: 1px;
     }
     #playBtn:hover { background: #ff6b52; }
-    #loginHint { margin-top: 18px; font-size: 13px; opacity: 0.6; }
+
+    /* Full control reference lives HERE, on the login screen, not in-game —
+       once you've seen it once, the in-game #controlsHint only needs to be
+       a bare key-name reminder (see its own comment below). */
+    #howToPlay {
+      margin-top: 22px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 14px 20px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 12px;
+      row-gap: 7px;
+      font-size: 13px;
+      max-width: 90vw;
+    }
+    #howToPlay .key {
+      justify-self: end;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-weight: bold;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    #howToPlay .action { opacity: 0.85; align-self: center; }
+    /* Touch devices get their own on-screen buttons instead (joystick,
+       JUMP/SHOVE/KICK/GRAB) — the keyboard/mouse reference would just be
+       noise, so main.js swaps in a short touch-specific version instead
+       of hiding this card outright. */
 
     /* --- Touch controls (mobile/tablet) --- */
     #touchControls {
@@ -367,31 +399,29 @@
       <p>Push everyone out. Last one standing wins.</p>
       <input id="nameInput" type="text" maxlength="16" placeholder="Your name" />
       <button id="playBtn">PLAY</button>
-      <div id="loginHint">WASD/arrows move &middot; SHIFT sprint &middot; SPACE jump &middot; F/click shove (hold to charge) &middot; Q/right-click special &middot; E grab</div>
+      <div id="howToPlay"></div>
     </div>
 
     <div id="hud" style="display:none;">
       <div id="mapName">Map: —</div>
       <div id="aliveCount">Players alive: —</div>
     </div>
+    <!-- Bare key reminder only — the full explanation lives on the login
+         screen's #howToPlay card, seen once before pressing PLAY. -->
     <div id="controlsHint" style="display:none;">
-      WASD / arrows — move<br/>
-      SHIFT — sprint<br/>
-      SPACE — jump<br/>
-      F / left click — shove (hold to charge)<br/>
-      Q / right click — special kick<br/>
-      E — grab &amp; carry (shove to throw)<br/>
-      MOUSE — look
+      WASD Move &middot; SHIFT Run<br/>
+      SPACE Jump &middot; F Shove<br/>
+      Q Special &middot; E Grab
     </div>
     <div id="banner"></div>
-    <div id="mouseLookHint" style="display:none;">Click the arena to enable mouse look</div>
+    <div id="mouseLookHint" style="display:none;">Click to look around</div>
 
     <div id="specialMeter">
       <div class="specialTitle">SPECIAL POWER</div>
       <div class="specialPips">
         <span class="pip"></span><span class="pip"></span><span class="pip"></span>
       </div>
-      <div id="specialHint">Land 3 charged shoves</div>
+      <div id="specialHint">0 / 3</div>
     </div>
     <div id="desktopChargeRing"><div id="desktopChargeFill"></div></div>
 
@@ -406,7 +436,7 @@
       <div id="touchGrabBtn" class="touchBtn">GRAB</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.20</div>
+    <div id="versionTag">v1.21</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

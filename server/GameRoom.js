@@ -5,6 +5,9 @@ import {
   SPECIAL_POWER_THRESHOLD, SPECIAL_KICK_RANGE, SPECIAL_KICK_FORCE, SPECIAL_KICK_UP_FORCE,
   GRAB_RANGE, GRAB_COOLDOWN_MS, HELD_OFFSET_Y, HOLD_MAX_MS,
   THROW_FORCE, THROW_UP_FORCE, DROP_FORCE, DROP_UP_FORCE,
+  MOMENTUM_MAX_TRACKED_SPEED, MOMENTUM_MAX_TRACKED_FALL_SPEED,
+  MOMENTUM_SPEED_BONUS_PER_UNIT, MOMENTUM_FALL_BONUS_PER_UNIT, MOMENTUM_MAX_MULTIPLIER,
+  MOMENTUM_GRAB_RANGE_BONUS_PER_UNIT, MOMENTUM_GRAB_RANGE_MAX_MULTIPLIER,
   TICK_RATE_HZ, ROUND_RESTART_DELAY_MS, MIN_PLAYERS_TO_START,
   PLAYER_COLORS
 } from './constants.js';
@@ -63,7 +66,12 @@ export class GameRoom {
       heldBy: null,
       holding: null,
       lastGrabTime: 0,
-      grabbedAt: 0
+      grabbedAt: 0,
+      // Momentum: derived from real position deltas in updateFromClient,
+      // never trusted directly from the client — see getMomentumMultiplier.
+      speed: 0,
+      vertSpeed: 0,
+      lastMoveTime: 0
     };
     this.players.set(id, player);
     this.roundActive = true;
@@ -94,11 +102,44 @@ export class GameRoom {
     // ignoring a dead player's moves.
     if (!player || !player.alive || player.heldBy !== null) return;
     if (typeof data.x !== 'number' || typeof data.y !== 'number' || typeof data.z !== 'number') return;
+
+    // Derive real velocity from how far they actually moved since their
+    // last update, BEFORE overwriting x/y/z below — this is what
+    // getMomentumMultiplier reads for combat, and deriving it from trusted
+    // position history (rather than accepting a client-reported speed
+    // value) means it can't be forged by just claiming a big number; the
+    // only way to raise it is to actually cover ground that fast.
+    const now = Date.now();
+    const dt = (now - player.lastMoveTime) / 1000;
+    // Skip the very first update (lastMoveTime is 0, so dt would be huge)
+    // and any implausibly large gap (a lag spike or a respawn teleport) —
+    // both would otherwise register as a momentary "infinite speed" burst.
+    if (player.lastMoveTime > 0 && dt > 0.001 && dt < 1) {
+      const dx = data.x - player.x;
+      const dz = data.z - player.z;
+      const dy = data.y - player.y;
+      player.speed = Math.min(MOMENTUM_MAX_TRACKED_SPEED, Math.hypot(dx, dz) / dt);
+      player.vertSpeed = Math.max(-MOMENTUM_MAX_TRACKED_FALL_SPEED, Math.min(MOMENTUM_MAX_TRACKED_FALL_SPEED, dy / dt));
+    }
+    player.lastMoveTime = now;
+
     // Trust client-simulated transform; server still validates boundary/collision each tick.
     player.x = data.x;
     player.y = data.y;
     player.z = data.z;
     player.rotY = data.rotY || 0;
+  }
+
+  // Real momentum, real payoff: a shove/kick/throw hits harder the faster
+  // the attacker was actually moving (running, sprinting, or falling) the
+  // instant they threw it. Falling counts too (vertSpeed < 0), so a
+  // mid-air shove/throw while still dropping from a jump lands bigger —
+  // matches the existing "jump+shove already works" design (see PLAN.md
+  // §11) with actual weight behind it now instead of just being allowed.
+  getMomentumMultiplier(player) {
+    const fallBonus = player.vertSpeed < 0 ? -player.vertSpeed * MOMENTUM_FALL_BONUS_PER_UNIT : 0;
+    const speedBonus = player.speed * MOMENTUM_SPEED_BONUS_PER_UNIT;
+    return Math.min(MOMENTUM_MAX_MULTIPLIER, 1 + speedBonus + fallBonus);
   }
 
   // Grabbing has no charge/power tiers — it's a single lunge that either
@@ -113,6 +154,14 @@ export class GameRoom {
     const now = Date.now();
     if (now - pusher.lastGrabTime < GRAB_COOLDOWN_MS) return;
 
+    // A fast-moving grab reaches a bit further — reads as a diving/lunging
+    // tackle rather than a bigger hit, since a grab has no "force" of its
+    // own to scale.
+    const effectiveGrabRange = GRAB_RANGE * Math.min(
+      MOMENTUM_GRAB_RANGE_MAX_MULTIPLIER,
+      1 + pusher.speed * MOMENTUM_GRAB_RANGE_BONUS_PER_UNIT
+    );
+
     let closest = null;
     let closestDist = Infinity;
     for (const target of this.players.values()) {
@@ -124,7 +173,7 @@ export class GameRoom {
       const dx = target.x - pusher.x;
       const dz = target.z - pusher.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > GRAB_RANGE || dist < 0.0001) continue;
+      if (dist > effectiveGrabRange || dist < 0.0001) continue;
       if (dist < closestDist) {
         closestDist = dist;
         closest = target;
@@ -163,14 +212,17 @@ export class GameRoom {
 
     const dirX = Math.sin(holder.rotY);
     const dirZ = Math.cos(holder.rotY);
+    // A holder who sprinted (or jumped) into the throw sends their captive
+    // flying noticeably further — same momentum system as a shove.
+    const momentum = this.getMomentumMultiplier(holder);
 
     this.io.emit('shoveAction', { playerId: holderId, power: 'throw' });
     this.io.emit('shoveHit', {
       sourceId: holderId,
       targetId,
       dirX, dirZ,
-      force: THROW_FORCE,
-      upForce: THROW_UP_FORCE,
+      force: THROW_FORCE * momentum,
+      upForce: THROW_UP_FORCE * momentum,
       power: 'throw'
     });
     this.io.emit('released', { holderId, targetId, thrown: true });
@@ -247,8 +299,13 @@ export class GameRoom {
     this.io.emit('shoveAction', { playerId: id, power });
 
     const range = power === 'special' ? SPECIAL_KICK_RANGE : SHOVE_RANGE;
-    const force = power === 'special' ? SPECIAL_KICK_FORCE : power === 'charged' ? CHARGED_SHOVE_FORCE : SHOVE_FORCE;
-    const upForce = power === 'special' ? SPECIAL_KICK_UP_FORCE : power === 'charged' ? CHARGED_SHOVE_UP_FORCE : SHOVE_UP_FORCE;
+    const baseForce = power === 'special' ? SPECIAL_KICK_FORCE : power === 'charged' ? CHARGED_SHOVE_FORCE : SHOVE_FORCE;
+    const baseUpForce = power === 'special' ? SPECIAL_KICK_UP_FORCE : power === 'charged' ? CHARGED_SHOVE_UP_FORCE : SHOVE_UP_FORCE;
+    // Running, sprinting, or still falling from a jump when the shove
+    // lands all make it hit harder — same system as a throw's momentum.
+    const momentum = this.getMomentumMultiplier(pusher);
+    const force = baseForce * momentum;
+    const upForce = baseUpForce * momentum;
 
     // Omnidirectional: any alive player within range gets pushed away from
     // the pusher, no facing/cone requirement. Simpler and more forgiving —

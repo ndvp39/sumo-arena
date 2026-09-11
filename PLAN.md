@@ -514,3 +514,50 @@ honestly by both agents: neither could render in an actual browser
 walk-cycle/held-tilt/holding-pose math is verified correct by trigonometry
 and by confirming the underlying state is correct, but not yet confirmed
 to *look* right — genuinely wants a first real playtest.
+
+## 15. Momentum-based combat, a spectator overview, and a minimal-text pass
+
+**Momentum.** Every attack now hits harder the faster the attacker was
+actually moving the instant it landed — run into a shove, or shove/throw
+while still falling from a jump, and it visibly does "bigger things," per
+the request. Derived server-side (`GameRoom#updateFromClient`) from real
+position deltas between consecutive move packets — not from a client-
+reported velocity — so it can't be forged by claiming a fake number, only
+by genuinely covering ground (or falling) that fast; the derived value is
+still capped generously (`MOMENTUM_MAX_TRACKED_SPEED`/`_FALL_SPEED`) so a
+lag spike or a respawn teleport can't register as a momentary "infinite
+speed" burst. `GameRoom#getMomentumMultiplier` folds horizontal speed and
+downward (falling) speed into one multiplier, capped overall at ~2.2x, and
+applies to normal/charged/special shove force+upForce and to a throw's
+force+upForce. A grab has no "force" to scale, so a fast approach instead
+extends its effective range slightly (`MOMENTUM_GRAB_RANGE_*`) — reads as
+a diving tackle rather than a bigger hit. Verified with a live raw-socket
+test: a stationary shove lands at exactly base force, the same shove after
+a fast approach lands ~2x harder (correctly hitting the tracked-speed cap,
+not the overall multiplier cap), the same scaling carries through to a
+charged shove, and a grab at a distance that would fail at rest succeeds
+once the attacker is moving fast enough to extend the range into it.
+
+**Spectator overview.** Elimination used to just leave the camera stuck on
+your own settled corpse for the rest of the round. Now, `main.js` waits
+`SPECTATE_DELAY_MS` (1.8s — long enough to actually see your own death
+effect) before easing the camera up into a high, slightly-angled overview
+of the whole arena (`scene.js#updateSpectatorCamera`), so you can watch
+who's still alive until the round restarts. Deliberately not a pure
+straight-down 90° angle — that flattens every player into an
+indistinguishable dot; the slight backward offset keeps height/shape
+readable. Existing name-sprites already billboard toward the camera
+regardless of angle, so player names stay legible from directly above with
+no extra work. Resets cleanly on respawn (`onRoundStart`) and disconnect.
+
+**Minimal in-game text.** The full control list moved to a single place —
+a new `#howToPlay` card on the login screen, populated by `main.js`
+per-device (a desktop list mentioning Shift/mouse, or a touch list
+mentioning the joystick/on-screen buttons — a touch player was never going
+to see a "Shift" key). Every in-game hint now assumes that was already
+seen once and just needs to jog memory: `#controlsHint` shrank from seven
+explanatory lines to three bare key/action pairs, the special-power hint
+went from "Land 2 more charged shoves" to a plain `2 / 3` (the pips
+already carry the visual progress — the text only needs to add what to
+press), and banner copy was trimmed throughout ("You've been grabbed! Hope
+for a rescue or brace for a throw..." → "Grabbed! / Brace yourself...").

@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 // pass, so /health lets you confirm what's actually live on a deploy
 // without needing a socket test script. RENDER_GIT_COMMIT is auto-injected
 // by Render on every deploy, so `commit` is free extra confirmation there.
-const SERVER_VERSION = 'v1.20';
+const SERVER_VERSION = 'v1.21';
 
 const app = express();
 app.use(cors());
