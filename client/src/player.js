@@ -18,6 +18,12 @@ export class LocalPlayer {
     this.arenaRadius = Infinity; // set via setArenaRadius() once a map is known
     this.serverTarget = null; // latest authoritative x/z, eased toward in update() — not snapped instantly
 
+    // Horizontal velocity carried into the air the instant grounded flips
+    // false (jumping, or walking off an edge) — see update() for how it's
+    // captured and coasted on.
+    this.airVelX = 0;
+    this.airVelZ = 0;
+
     this.avatar = createAvatar(name, color);
     scene.add(this.avatar.group);
   }
@@ -48,11 +54,15 @@ export class LocalPlayer {
   // standard third-person controller (camera and character rotation are
   // decoupled; only the camera responds to the mouse). Independent per-key
   // state (not mutually exclusive) means jumping/shoving while moving all
-  // just work — nothing here gates one input on another, except WASD
-  // itself is only read while grounded: no air control once airborne, and
-  // no momentum carries over either since this sets position directly
-  // rather than accumulating a velocity — a jump commits you to whatever
-  // arc gravity gives you.
+  // just work — nothing here gates one input on another.
+  //
+  // Grounded movement is direct/instant (position set straight from
+  // current input, no acceleration) for snappy WASD control. The moment
+  // grounded goes false — jumping, or walking off an edge — whatever
+  // horizontal velocity was just active gets carried into the air as
+  // airVelX/Z and WASD stops being read entirely: no redirecting, no
+  // adding more speed, just coasting on real momentum until landing,
+  // like an actual physics-driven jump/fall instead of a frozen one.
   update(keys, dt, cameraYaw) {
     if (this.alive) {
       if (this.grounded) {
@@ -60,12 +70,13 @@ export class LocalPlayer {
         const moveRight = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
         const hasInput = moveForward !== 0 || moveRight !== 0;
 
+        let dx = 0, dz = 0;
         if (hasInput) {
           const fx = Math.sin(cameraYaw), fz = Math.cos(cameraYaw);
           const rx = -Math.cos(cameraYaw), rz = Math.sin(cameraYaw);
 
-          let dx = fx * moveForward + rx * moveRight;
-          let dz = fz * moveForward + rz * moveRight;
+          dx = fx * moveForward + rx * moveRight;
+          dz = fz * moveForward + rz * moveRight;
           const len = Math.hypot(dx, dz);
           dx = (dx / len) * MOVE_SPEED;
           dz = (dz / len) * MOVE_SPEED;
@@ -74,6 +85,15 @@ export class LocalPlayer {
           this.position.z += dz * dt;
           this.rotY = Math.atan2(dx, dz);
         }
+        // Kept current every grounded frame so it's always ready to be
+        // the exact launch velocity the instant grounded flips false,
+        // whether that's from pressing Space below or from the ground
+        // clamp further down finding you past the platform's edge.
+        this.airVelX = dx;
+        this.airVelZ = dz;
+      } else {
+        this.position.x += this.airVelX * dt;
+        this.position.z += this.airVelZ * dt;
       }
 
       if (keys.space && this.grounded) {
@@ -128,6 +148,8 @@ export class LocalPlayer {
     this.position.set(x, GROUND_Y, z);
     this.velocityY = 0;
     this.knockback.set(0, 0, 0);
+    this.airVelX = 0;
+    this.airVelZ = 0;
     this.rotY = rotY;
     this.grounded = true;
     this.alive = true;
