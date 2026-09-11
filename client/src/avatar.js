@@ -220,13 +220,16 @@ export function updateAvatar(avatar, now, dt, state = {}) {
   avatar.group.rotation.x = -avatar.heldTiltProgress * (Math.PI / 2 - 0.25);
 
   // Squash-and-stretch on landing (triggerLandSquash, called from
-  // player.js the instant a fall/jump ends) — a fixed per-frame decay
-  // rather than dt-scaled, matching heldTiltProgress/fallProgress's own
-  // style just above/below, since this only ever needs to resolve over a
-  // handful of frames regardless of framerate.
-  avatar.landSquashProgress = Math.max(0, avatar.landSquashProgress - 0.08);
+  // player.js the instant a fall/jump ends) — deliberately strong/
+  // cartoonish (matching the game's existing tone: blood-splat
+  // eliminations, ragdoll limb-pop, ...) rather than a subtle wobble, so
+  // an ordinary jump's landing is unmistakable at a glance. Fixed
+  // per-frame decay rather than dt-scaled, matching heldTiltProgress/
+  // fallProgress's own style just above/below, since this only ever
+  // needs to resolve over a handful of frames regardless of framerate.
+  avatar.landSquashProgress = Math.max(0, avatar.landSquashProgress - 0.055);
   const squash = avatar.landSquashProgress;
-  avatar.group.scale.set(1 + squash * 0.18, 1 - squash * 0.28, 1 + squash * 0.18);
+  avatar.group.scale.set(1 + squash * 0.32, 1 - squash * 0.42, 1 + squash * 0.32);
 
   if (!isAlive && avatar.fallProgress < 1) {
     avatar.fallProgress = Math.min(1, avatar.fallProgress + 0.035);

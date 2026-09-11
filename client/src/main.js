@@ -579,6 +579,22 @@ function loop(now) {
 
   if (localPlayer) {
     localPlayer.update(controlsEnabled ? keys : { w: false, a: false, s: false, d: false, space: false, sprint: false }, dt, cameraYaw);
+
+    // A hard landing is a real physical impact too, not just a combat
+    // hit — give it the same hit-stop treatment (scaled down for a small
+    // hop, up to the same weight as a normal shove for a full jump) plus
+    // a dust-ring effect at the feet, so landing reads as an actual event
+    // instead of just... stopping falling.
+    if (localPlayer.justLandedIntensity > 0) {
+      triggerHitStop(localPlayer.justLandedIntensity > 0.5 ? 'normal' : 'drop');
+      sceneManager.spawnShockwave(localPlayer.position, {
+        color: 0xcbb896,
+        scaleMult: 0.6 + localPlayer.justLandedIntensity * 0.6,
+        duration: 0.3
+      });
+      localPlayer.justLandedIntensity = 0;
+    }
+
     if (isSpectating) {
       sceneManager.updateSpectatorCamera(localPlayer.arenaRadius, dt);
     } else {

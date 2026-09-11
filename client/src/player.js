@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY, DEATH_SETTLE_Y, SPRINT_MULTIPLIER } from './constants.js';
 import { createAvatar, updateAvatar, triggerPunch, triggerLandSquash, resetAvatarVisuals } from './avatar.js';
 
-// Landing speed (units/sec) at/above which a squash starts registering at
-// all — a short hop shouldn't visibly squish, only a real fall/jump.
-const LAND_SQUASH_MIN_SPEED = 3;
-// Landing speed that maps to a full-intensity (1.0) squash — tuned well
-// above LAND_SQUASH_MIN_SPEED so there's real range between "barely
-// noticeable" and "full squash", not a near-binary on/off.
-const LAND_SQUASH_MAX_SPEED = 16;
+// Landing speed (units/sec) that maps to a full-intensity (1.0) squash.
+// The only landings that actually happen are from a jump (falling off the
+// platform edge ends in elimination, not a landing), so the real-world
+// range here is 0 (a jump cut short) to about JUMP_SPEED (8) for a full,
+// uninterrupted jump — tuned just above that so an ordinary jump reads as
+// a strong, unmistakable squash rather than a barely-there wobble.
+const LAND_SQUASH_MAX_SPEED = 9;
 
 // How fast the local player's position eases toward the server-forced
 // "held aloft" target (see setHeldTarget) — much faster than the normal
@@ -37,6 +37,13 @@ export class LocalPlayer {
     // captured and coasted on.
     this.airVelX = 0;
     this.airVelZ = 0;
+
+    // Set for exactly one frame the instant a real landing happens (see
+    // update()'s ground-clamp), 0..1 by how hard it was. main.js reads and
+    // clears this right after calling update() to trigger a landing-impact
+    // hit-stop/effect — kept here rather than fired via a callback so this
+    // class stays free of any direct main.js/scene.js coupling.
+    this.justLandedIntensity = 0;
 
     // Grab/throw: isHeld means someone else is carrying THIS player (their
     // position is fully server-driven, see setHeldTarget/update's early
@@ -195,12 +202,15 @@ export class LocalPlayer {
     if (distFromCenter <= this.arenaRadius) {
       if (this.position.y <= GROUND_Y) {
         // Squash-and-stretch, scaled by how fast the fall actually was —
-        // a small hop barely registers, a real fall squishes hard. Reads
-        // velocityY (still the pre-landing fall speed here) before it
-        // gets reset to 0 on the next line.
+        // a cut-short hop barely registers, a full jump squishes hard.
+        // Reads velocityY (still the pre-landing fall speed here) before
+        // it gets reset to 0 on the next line.
         if (!wasGrounded) {
-          const intensity = (-this.velocityY - LAND_SQUASH_MIN_SPEED) / (LAND_SQUASH_MAX_SPEED - LAND_SQUASH_MIN_SPEED);
-          if (intensity > 0) triggerLandSquash(this.avatar, intensity);
+          const intensity = Math.min(1, -this.velocityY / LAND_SQUASH_MAX_SPEED);
+          if (intensity > 0) {
+            triggerLandSquash(this.avatar, intensity);
+            this.justLandedIntensity = intensity;
+          }
         }
         this.position.y = GROUND_Y;
         this.velocityY = 0;
@@ -235,6 +245,7 @@ export class LocalPlayer {
     this.knockback.set(0, 0, 0);
     this.airVelX = 0;
     this.airVelZ = 0;
+    this.justLandedIntensity = 0;
     this.rotY = rotY;
     this.grounded = true;
     this.alive = true;

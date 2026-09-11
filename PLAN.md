@@ -615,3 +615,21 @@ of the changed logic plus confirming they occupy independent transform/
 state channels from every existing pose system (rotation.x/y/z, arm/leg
 pivots, materials) rather than by a real browser render, same known
 limitation as the walk-cycle/held-tilt work a couple passes back.
+
+**Follow-up: landing wasn't actually noticeable.** Reported back as "can't
+see the freeze or the stretch." Two real issues, not one: the squash
+amplitude/speed-range was tuned too subtly (`LAND_SQUASH_MAX_SPEED` was
+16, well above what a normal jump's landing speed — roughly `JUMP_SPEED`,
+8 — actually reaches, so most ordinary jumps landed at under half
+intensity), and landing had never been wired to hit-stop at all — only
+combat hits were. Fixed both: the squash range now maps 0 to
+`JUMP_SPEED`-ish speeds onto the full 0..1 intensity band so an ordinary
+jump reads as a strong, cartoonish squash (matching the game's existing
+tone) rather than a barely-there wobble, and `LocalPlayer` now sets a
+one-frame `justLandedIntensity` signal that `main.js` reads right after
+`update()` to trigger the same hit-stop system a combat hit uses (scaled
+down for a soft landing, up to a normal shove's weight for a full jump)
+plus a dust-colored impact ring at the feet reusing the existing
+shockwave-effect system — guaranteed visible regardless of how subtle the
+scale change reads, since it's a distinct, independently-proven visual
+language already used for combat hits.
