@@ -684,3 +684,19 @@ here. Verified the full attribution payload shape with a live test
 directly-reviewable conditional rather than separately live-tested, since
 a clean 2-player test round ends immediately after the first elimination,
 before a second, unassisted one could be staged).
+
+## 18. Faster movement, bigger throws, and a mobile kill-feed reposition
+
+- `MOVE_SPEED` 6→7.5 and `JUMP_SPEED` 8→9.5 (client+server mirror). The
+  landing-squash calibration (`LAND_SQUASH_MAX_SPEED` in player.js) is now
+  derived as `JUMP_SPEED + 1` instead of a separate hardcoded number, so it
+  stays correctly tuned to whatever JUMP_SPEED is set to in the future
+  without needing a matching manual edit.
+- `THROW_FORCE` 60→85, `THROW_UP_FORCE` 16→22 — a clearly bigger flight
+  distance for a thrown player, verified live (85/22 confirmed on the
+  wire) alongside a normal-shove regression check (still exactly 16,
+  untouched).
+- Kill feed repositioned on touch devices: left side instead of right
+  (clear of the joystick/action buttons, which live on the right/bottom
+  on mobile), smaller text, and the slide-in/fade-out animation direction
+  flipped to match motion coming from the left instead of the right.

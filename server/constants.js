@@ -13,8 +13,8 @@ export const GROUND_Y = 0;
 export const ELIMINATION_Y = -14;
 
 export const GRAVITY = 20;
-export const JUMP_SPEED = 8;
-export const MOVE_SPEED = 6;
+export const JUMP_SPEED = 9.5;
+export const MOVE_SPEED = 7.5;
 
 // Arm length, mirrored from client/src/avatar.js's arm geometry
 // (BoxGeometry(0.18, 0.6, 0.18) swung ~horizontal) — this is how far a hand
@@ -65,9 +65,10 @@ export const HELD_OFFSET_Y = 2.2;
 export const HOLD_MAX_MS = 5000;
 // The biggest, most dramatic knockback tier in the game — landing a grab
 // and then a throw is a real two-step commitment, so the payoff needs to
-// read as bigger than even the special kick.
-export const THROW_FORCE = 60;
-export const THROW_UP_FORCE = 16;
+// read as bigger than even the special kick and send the thrown player
+// flying a clearly bigger distance than any other hit in the game.
+export const THROW_FORCE = 85;
+export const THROW_UP_FORCE = 22;
 // Ending a hold WITHOUT a throw (timeout, or the holder getting shoved or
 // eliminated) reads as "dropped", not "attacked" — a much gentler impulse
 // than even a normal shove.

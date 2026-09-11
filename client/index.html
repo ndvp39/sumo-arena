@@ -119,7 +119,27 @@
       from { opacity: 0; transform: translateX(30px); }
       to { opacity: 1; transform: translateX(0); }
     }
-    body.touch-ui .killFeedRow { font-size: 10px; padding: 3px 8px; }
+    /* Mobile: left side instead of right (clear of the touch joystick/
+       action buttons which live on the right/bottom), and noticeably
+       smaller — screen space is scarcer there than on desktop. Animation
+       direction flips to match: slides in from the left, fades out toward
+       the left, instead of the desktop's right-side motion. */
+    body.touch-ui #killFeed {
+      left: max(8px, env(safe-area-inset-left));
+      right: auto;
+      align-items: flex-start;
+    }
+    body.touch-ui .killFeedRow {
+      font-size: 9px;
+      padding: 2px 7px;
+      max-width: 48vw;
+      animation-name: killFeedInLeft;
+    }
+    body.touch-ui .killFeedRow.fading { transform: translateX(-20px); }
+    @keyframes killFeedInLeft {
+      from { opacity: 0; transform: translateX(-30px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
 
     /* Anchored near the top, clear of screen-center, on purpose: this
        banner covers "You were eliminated" while the local player's own
@@ -506,7 +526,7 @@
       <div id="touchGrabBtn" class="touchBtn">GRAB</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.24</div>
+    <div id="versionTag">v1.25</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

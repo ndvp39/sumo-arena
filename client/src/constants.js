@@ -6,8 +6,8 @@ export const PLAYER_RADIUS = 0.5;
 export const GROUND_Y = 0;
 
 export const GRAVITY = 20;
-export const JUMP_SPEED = 8;
-export const MOVE_SPEED = 6;
+export const JUMP_SPEED = 9.5;
+export const MOVE_SPEED = 7.5;
 
 // Just above the server's ELIMINATION_Y (-14, see server/constants.js) so a
 // falling player visually plunges into the themed liquid surface (see

@@ -5,10 +5,10 @@ import { createAvatar, updateAvatar, triggerPunch, triggerLandSquash, resetAvata
 // Landing speed (units/sec) that maps to a full-intensity (1.0) squash.
 // The only landings that actually happen are from a jump (falling off the
 // platform edge ends in elimination, not a landing), so the real-world
-// range here is 0 (a jump cut short) to about JUMP_SPEED (8) for a full,
+// range here is 0 (a jump cut short) to about JUMP_SPEED for a full,
 // uninterrupted jump — tuned just above that so an ordinary jump reads as
 // a strong, unmistakable squash rather than a barely-there wobble.
-const LAND_SQUASH_MAX_SPEED = 9;
+const LAND_SQUASH_MAX_SPEED = JUMP_SPEED + 1;
 
 // How fast the local player's position eases toward the server-forced
 // "held aloft" target (see setHeldTarget) — much faster than the normal
