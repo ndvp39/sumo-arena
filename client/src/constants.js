@@ -34,6 +34,21 @@ export const SPECIAL_POWER_THRESHOLD = 3;
 
 export const KNOCKBACK_DECAY = 4.5; // higher = knockback velocity dies out faster
 
+// Mirrors server/constants.js SPRINT_MULTIPLIER (movement is client-
+// authoritative, so this is what actually applies the speed boost).
+export const SPRINT_MULTIPLIER = 1.7;
+// Fraction of JOYSTICK_MAX_RADIUS_PX the knob must be pushed past before
+// mobile counts it as "sprint" — mimics an analog stick's "push further to
+// run" instead of needing a separate button.
+export const SPRINT_JOYSTICK_THRESHOLD = 0.8;
+
+// How fast the walk/run leg-and-arm swing cycle advances, in radians per
+// second per unit of MOVE_SPEED — see avatar.js's walk-cycle. Tuned so
+// normal walking speed reads as a walk and sprint speed reads as a run,
+// purely from the resulting cycle frequency (faster movement = faster
+// cycle) without needing a separate "is sprinting" signal into the avatar.
+export const WALK_CYCLE_HZ_PER_SPEED = 0.4;
+
 export const NETWORK_SEND_HZ = 20;
 export const REMOTE_LERP_FACTOR = 0.25; // per-frame-at-60fps smoothing toward latest snapshot
 

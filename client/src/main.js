@@ -41,7 +41,7 @@ let chargeStartTime = null;
 // server-side doesn't already gate (see GameRoom#handleShove).
 let specialReady = false;
 
-const keys = { w: false, a: false, s: false, d: false, space: false };
+const keys = { w: false, a: false, s: false, d: false, space: false, sprint: false };
 
 // Last-resort, page-wide zoom guards. CSS touch-action and the per-control
 // preventDefault() calls in touchControls.js should already stop zoom, but
@@ -208,7 +208,23 @@ function startGame(name) {
 
       const self = players.find(p => p.id === selfId);
       if (self && localPlayer) {
-        localPlayer.applyServerCorrection(self.x, self.z, lastSentX, lastSentZ);
+        // heldBy/holding are state-driven every broadcast, same pattern as
+        // `alive` — the one-shot 'grabbed'/'released' events below only
+        // drive the banner text and one-shot effects, not this flag, so a
+        // dropped event packet can't leave the client stuck thinking it's
+        // still held.
+        localPlayer.setHeld(self.heldBy !== null);
+        localPlayer.setHolding(self.holding);
+
+        // While held, the server is fully authoritative over position (see
+        // GameRoom#updateHeldPlayers) — track it directly instead of the
+        // normal delta-based correction, which assumes the client is still
+        // the one sending moves (it isn't; see loop()'s send-gate below).
+        if (self.heldBy !== null) {
+          localPlayer.setHeldTarget(self.x, self.y, self.z);
+        } else {
+          localPlayer.applyServerCorrection(self.x, self.z, lastSentX, lastSentZ);
+        }
       }
     },
     onShoveAction: ({ playerId, power }) => {
@@ -218,9 +234,12 @@ function startGame(name) {
       if (power && power !== 'normal') {
         const pos = playerId === selfId ? localPlayer?.avatar.group.position : remotePlayers.getPosition(playerId);
         if (pos) {
-          sceneManager.spawnShockwave(pos, power === 'special'
-            ? { color: 0x66e0ff, scaleMult: 1.7, duration: 0.6 }
-            : { color: 0xffcc33, scaleMult: 1, duration: 0.45 });
+          const EFFECT_BY_POWER = {
+            charged: { color: 0xffcc33, scaleMult: 1, duration: 0.45 },
+            special: { color: 0x66e0ff, scaleMult: 1.7, duration: 0.6 },
+            throw: { color: 0xff5522, scaleMult: 2, duration: 0.65 }
+          };
+          sceneManager.spawnShockwave(pos, EFFECT_BY_POWER[power] || EFFECT_BY_POWER.charged);
         }
       }
     },
@@ -229,9 +248,33 @@ function startGame(name) {
         localPlayer.applyKnockback(data.dirX, data.dirZ, data.force, data.upForce);
         if (data.power === 'charged') sceneManager.shake(0.25, 250);
         else if (data.power === 'special') sceneManager.shake(0.45, 400);
+        else if (data.power === 'throw') sceneManager.shake(0.6, 500);
+        // 'drop' (an un-thrown release, see GameRoom#dropHeld) is
+        // deliberately gentle — no shake, it's an "oops" not a hit.
       }
     },
     onSpecialProgress: ({ count, threshold, ready }) => updateSpecialUI(count, threshold, ready),
+    onGrabbed: ({ holderId, targetId }) => {
+      if (targetId === selfId) {
+        showBanner("You've been grabbed!", 'Hope for a rescue or brace for a throw...');
+      } else if (holderId === selfId) {
+        // localPlayer.holding itself is set from the next 'state' broadcast
+        // (see onState) — this is just the immediate flavor text.
+        hideBanner();
+      }
+    },
+    onReleased: ({ targetId, thrown }) => {
+      if (targetId === selfId) {
+        hideBanner();
+        // No natural "next event" clears this one promptly the way the
+        // eliminated/round-over banners get replaced, so it just times
+        // itself out.
+        if (!thrown) { showBanner('Dropped!', ''); setTimeout(hideBanner, 1800); }
+      }
+      // Throw/drop knockback itself arrives via the normal onShoveHit
+      // above (power: 'throw' | 'drop') — this event is purely for
+      // clearing the "You've been grabbed!" banner and local flag state.
+    },
     onEliminated: (id) => {
       if (id === selfId) {
         sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
@@ -288,8 +331,10 @@ function setupInput() {
       case 'KeyS': case 'ArrowDown': keys.s = true; break;
       case 'KeyD': case 'ArrowRight': keys.d = true; break;
       case 'Space': keys.space = true; e.preventDefault(); break;
+      case 'ShiftLeft': case 'ShiftRight': keys.sprint = true; break;
       case 'KeyF': if (!e.repeat) onShovePress(); break;
       case 'KeyQ': if (!e.repeat) fireSpecial(); break;
+      case 'KeyE': if (!e.repeat) fireGrab(); break;
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -299,6 +344,7 @@ function setupInput() {
       case 'KeyS': case 'ArrowDown': keys.s = false; break;
       case 'KeyD': case 'ArrowRight': keys.d = false; break;
       case 'Space': keys.space = false; break;
+      case 'ShiftLeft': case 'ShiftRight': keys.sprint = false; break;
       case 'KeyF': onShoveRelease(); break;
     }
   });
@@ -313,6 +359,7 @@ function setupInput() {
       onShovePress,
       onShoveRelease,
       onSpecialTrigger: fireSpecial,
+      onGrabTrigger: fireGrab,
       applyLookDelta: (dx, dy) => applyMouseLookDelta(dx, dy, TOUCH_LOOK_SENSITIVITY)
     });
     showTouchControls();
@@ -365,7 +412,7 @@ function applyMouseLookDelta(dx, dy, sensitivity) {
 // Sends a shove if the cooldown allows it; silently does nothing otherwise
 // (matches the existing tap-on-cooldown behavior).
 function fireShove(power) {
-  if (!controlsEnabled || !localPlayer?.alive) return;
+  if (!controlsEnabled || !localPlayer?.alive || localPlayer?.isHeld) return;
   const now = performance.now();
   if (now - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
   lastShoveClientTime = now;
@@ -376,10 +423,18 @@ function fireShove(power) {
 // hold does nothing — matches a tap's existing silent-no-op-on-cooldown
 // behavior). The loop() below advances the charge bar toward full but does
 // NOT fire anything by itself — nothing happens until release (see below).
+//
+// Holding someone is the one exception to "hold to charge": a 2s charge
+// flow doesn't make sense while your hands are already full, so pressing
+// shove while holding just immediately throws instead (see
+// GameRoom#handleShove's own holding-check, which is what actually
+// converts this into a throw server-side — this just fires without
+// starting a charge cycle).
 function onShovePress() {
   if (fShoveHeld) return;
   fShoveHeld = true;
-  if (!controlsEnabled || !localPlayer?.alive) return;
+  if (!controlsEnabled || !localPlayer?.alive || localPlayer?.isHeld) return;
+  if (localPlayer?.holding) { fireShove('normal'); return; }
   if (performance.now() - lastShoveClientTime < SHOVE_COOLDOWN_MS) return;
   chargeStartTime = performance.now();
 }
@@ -413,6 +468,14 @@ function fireSpecial() {
   fireShove('special');
 }
 
+// No cooldown/range check here — the server validates both (see
+// GameRoom#handleGrab) and silently no-ops a whiffed grab exactly like a
+// whiffed shove, so this just forwards the intent.
+function fireGrab() {
+  if (!controlsEnabled || !localPlayer?.alive || localPlayer?.isHeld || localPlayer?.holding) return;
+  network.sendGrab();
+}
+
 let lastTime = performance.now();
 let sendAccumulator = 0;
 const sendInterval = 1 / NETWORK_SEND_HZ;
@@ -423,24 +486,30 @@ function loop(now) {
   lastTime = now;
 
   if (localPlayer) {
-    localPlayer.update(controlsEnabled ? keys : { w: false, a: false, s: false, d: false, space: false }, dt, cameraYaw);
+    localPlayer.update(controlsEnabled ? keys : { w: false, a: false, s: false, d: false, space: false, sprint: false }, dt, cameraYaw);
     sceneManager.updateCamera(localPlayer.position, cameraYaw, cameraPitch, dt);
+    // Only meaningful for the local player — remote sprinters don't affect
+    // this client's own camera. Gated on isHeld too since a held player's
+    // keys.sprint doesn't drive anything (LocalPlayer#update ignores it
+    // entirely while held) and shouldn't visually widen their FOV either.
+    sceneManager.setSprinting(controlsEnabled && !localPlayer.isHeld && keys.sprint);
 
     sendAccumulator += dt;
     if (sendAccumulator >= sendInterval) {
       sendAccumulator = 0;
-      // Only stream position while alive. The server already ignores move
-      // updates from a dead player (GameRoom.updateFromClient), but there's
-      // a race: this client keeps free-falling its own view for the
-      // dramatic drop the whole time it's dead/spectating (which can be
-      // several seconds, arbitrarily far below the map), and a packet sent
-      // during that fall can still be in flight when the round restarts and
-      // the server flips this player back to alive - at which point that
-      // stale packet would be accepted, snapping the freshly-spawned player
-      // back into "still falling" territory and instantly re-eliminating
-      // them, restarting the round again. Never sending while dead means no
-      // such stale packet can ever be in flight to race against a respawn.
-      if (localPlayer.alive) {
+      // Only stream position while alive AND not held. The server already
+      // ignores move updates in both cases (GameRoom.updateFromClient), but
+      // there's a race for the alive case: this client keeps free-falling
+      // its own view for the dramatic drop the whole time it's dead/
+      // spectating (which can be several seconds, arbitrarily far below the
+      // map), and a packet sent during that fall can still be in flight
+      // when the round restarts and the server flips this player back to
+      // alive - at which point that stale packet would be accepted,
+      // snapping the freshly-spawned player back into "still falling"
+      // territory and instantly re-eliminating them, restarting the round
+      // again. Never sending while dead/held means no such stale packet
+      // can ever be in flight to race against a respawn or a release.
+      if (localPlayer.alive && !localPlayer.isHeld) {
         network.sendMove({
           x: localPlayer.position.x,
           y: localPlayer.position.y,

@@ -41,6 +41,36 @@ export const SPECIAL_KICK_RANGE = SHOVE_RANGE + 0.6;
 export const SPECIAL_KICK_FORCE = 46;
 export const SPECIAL_KICK_UP_FORCE = 13;
 
+// Grab & throw. Reach is capped at SHOVE_RANGE (grabbing requires being at
+// least as close as a shove, not "in range and hoping"), and the cooldown
+// is a bit longer than a shove's since committing to a hold is a bigger
+// swing than a single push.
+export const GRAB_RANGE = SHOVE_RANGE;
+export const GRAB_COOLDOWN_MS = 800;
+// How far above the holder's own head the held player is suspended —
+// GameRoom#updateHeldPlayers forces the held player's y to holder.y + this
+// every tick, purely a visual "held aloft" offset with no physics of its
+// own (their real position is just teleported there each tick).
+export const HELD_OFFSET_Y = 2.2;
+// A hold that's never thrown auto-releases (as a drop, not a throw) after
+// this long, so grabbing can't be used to stall a round indefinitely.
+export const HOLD_MAX_MS = 5000;
+// The biggest, most dramatic knockback tier in the game — landing a grab
+// and then a throw is a real two-step commitment, so the payoff needs to
+// read as bigger than even the special kick.
+export const THROW_FORCE = 60;
+export const THROW_UP_FORCE = 16;
+// Ending a hold WITHOUT a throw (timeout, or the holder getting shoved or
+// eliminated) reads as "dropped", not "attacked" — a much gentler impulse
+// than even a normal shove.
+export const DROP_FORCE = 4;
+export const DROP_UP_FORCE = 2;
+
+// Sprint. Mirrored on the client (client/src/constants.js) purely for
+// documentation/consistency — movement itself is client-authoritative, so
+// the server never actually applies this multiplier to anything.
+export const SPRINT_MULTIPLIER = 1.7;
+
 export const TICK_RATE_HZ = 30;
 export const ROUND_RESTART_DELAY_MS = 5000;
 export const MIN_PLAYERS_TO_START = 2;

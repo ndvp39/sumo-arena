@@ -432,3 +432,85 @@ client that the server's `init` payload now includes `liquidColor`/
 paths for both the local-player and remote-player cases since this needed
 a live two-headset session (one falling, one watching) to see rendered,
 which wasn't available in this pass.
+
+## 14. HUD architecture fix, movement polish, sprint, and grab-and-throw
+
+**Standing architecture note.** A production-only bug report ("the charge
+ring never shows, but works locally") led to a long live-debugging arc that
+root-caused to `#app`'s CSS height (`100vh`/`100dvh`) resolving unreliably
+small on at least one real browser, so any `position: absolute` overlay
+anchored from the bottom with a real offset/size got pushed above the
+visible page — invisible, with `body{overflow:hidden}` meaning no scroll
+could ever reach it. **Every HUD/overlay element now uses `position: fixed`**
+(anchored to the real viewport, bypassing `#app`'s box entirely), confirmed
+working live in the affected browser before the fix shipped. This is now a
+hard rule for any future UI: never `position: absolute` a viewport overlay.
+
+**Movement polish.** `MOVE_SPEED` raised 5→6. Jumping/falling went through
+two iterations: first "no air control" (WASD ignored entirely while
+airborne, which also froze horizontal motion — jumping while running just
+stopped you dead in the air), then corrected to real momentum — grounded
+movement continuously records its own current velocity, and the instant
+`grounded` flips false (jump, or walking off an edge) that value is locked
+in as `airVelX/Z` and coasted on every frame with WASD read not at all
+until landing. The mobile joystick knob also had a real bug: its CSS
+applied *both* `margin-left/-top: -28px` and `transform: translate(-50%,
+-50%)` — two different centering techniques stacking instead of one,
+pushing the knob up-left of true center at rest. Fixed by dropping the
+margin rule; touchControls.js's dynamic transform (already correct) was
+the only centering that should have existed. Added a short eased
+snap-back transition on release and a brighter "active" tint while
+touched, and tightened the deadzone 8px→5px.
+
+**Sprint.** Shift (desktop, either key) or pushing the mobile joystick
+knob past ~80% of its max radius (checked on the *pre-clamp* magnitude in
+`updateJoystick`, mimicking a real analog stick's "push further to run")
+sets a `keys.sprint` boolean feeding a `MOVE_SPEED` multiplier. Made
+visible three ways: the camera FOV eases wider while sprinting
+(`scene.js#setSprinting`), and — since the avatar previously had **no
+walk animation at all**, legs/arms were static during ordinary movement —
+a proper contralateral walk/run limb cycle was added to `avatar.js`,
+its frequency and stride amplitude both scaling with actual speed so
+sprinting reads as visibly faster strides, not just a faster metronome.
+
+**Grab and throw.** Server-authoritative: press E (or the mobile GRAB
+button) near a valid target to grab the nearest one in range; a
+successful grab forces the held player's position to sit exactly above
+the holder's head every server tick (`GameRoom#updateHeldPlayers`),
+overriding anything their own client reports (mirrors how a dead player's
+moves are already ignored). Pressing shove while holding someone skips
+the charge-hold flow entirely and immediately throws — the strongest
+knockback tier in the game — in the holder's current facing direction.
+Losing your grip isn't just voluntary: getting shoved while holding
+someone drops them (a gentle "oops" impulse, not a hit), as does your own
+elimination or disconnect, and an unthrown hold auto-releases after 5s so
+it can't be used to stall a round. Two real bugs surfaced during testing
+and are now guarded with comments explaining why: a held player sharing
+their holder's exact (x,z) meant a third party's shove on the holder was
+independently "hitting" the coincidentally-co-located captive too (fixed
+by excluding `heldBy !== null` players from both `resolveCollisions` and
+the shove hit-scan); and an early fix for that attempted to drop captives
+*inside* the same exclusion loop, which un-excluded them retroactively
+mid-iteration (fixed by collecting holders-to-drop and processing them
+only after the loop completes). Avatar posing gained a documented
+priority order (one-shot punch/kick/throw animation → held-tilt/limp
+pose → sustained holding-overhead arm pose → walk-cycle → idle) since
+several pose sources can now be simultaneously "active" (a holder who's
+also walking, for instance).
+
+**Process note.** This pass was built and checked using three parallel
+agents per explicit request: one implementer, one independent verifier
+that wrote its own fresh raw-socket tests rather than trusting the
+implementer's self-report (and specifically re-created the double-hit bug
+scenario to confirm the fix actually holds), and one pure-ideation agent
+that surveyed the codebase and reported the game currently has **zero
+audio anywhere** as the single highest-impact gap, ranking sound effects,
+hit-stop/freeze-frame on impact, and a kill-feed ticker as the top
+recommendation for a future pass. Verifier result: 22/22 independent
+test cases passed, zero implementation bugs found, no `position:absolute`
+regressions, no stray files. The one residual known risk, flagged
+honestly by both agents: neither could render in an actual browser
+(Playwright's browser download is blocked in this sandbox), so the
+walk-cycle/held-tilt/holding-pose math is verified correct by trigonometry
+and by confirming the underlying state is correct, but not yet confirmed
+to *look* right — genuinely wants a first real playtest.

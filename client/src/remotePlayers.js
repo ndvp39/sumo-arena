@@ -24,7 +24,13 @@ export class RemotePlayers {
     this.map.set(playerData.id, {
       avatar,
       target: { x: playerData.x, y: playerData.y, z: playerData.z, rotY: playerData.rotY },
-      alive: playerData.alive
+      alive: playerData.alive,
+      // heldBy/holding are state-driven from every 'state' broadcast (see
+      // updateFromState) — same pattern as `alive` — rather than only
+      // trusting the one-shot 'grabbed'/'released' events, so a dropped
+      // packet can't leave a client stuck thinking someone is still held.
+      heldBy: playerData.heldBy ?? null,
+      holding: playerData.holding ?? null
     });
   }
 
@@ -51,6 +57,8 @@ export class RemotePlayers {
       entry.target.y = p.y;
       entry.target.z = p.z;
       entry.target.rotY = p.rotY;
+      entry.heldBy = p.heldBy ?? null;
+      entry.holding = p.holding ?? null;
 
       const wasAlive = entry.alive;
       entry.alive = p.alive;
@@ -79,13 +87,21 @@ export class RemotePlayers {
       resetAvatarVisuals(entry.avatar);
       entry.target = { x: p.x, y: p.y, z: p.z, rotY: p.rotY };
       entry.alive = true;
+      entry.heldBy = null;
+      entry.holding = null;
     }
   }
 
   tick(dt) {
     const alpha = 1 - Math.pow(1 - REMOTE_LERP_FACTOR, dt * 60);
+    const now = performance.now();
     for (const entry of this.map.values()) {
       const { avatar, target } = entry;
+      const isHeld = entry.heldBy !== null;
+
+      const prevX = avatar.group.position.x;
+      const prevZ = avatar.group.position.z;
+
       avatar.group.position.x += (target.x - avatar.group.position.x) * alpha;
       avatar.group.position.y += (target.y - avatar.group.position.y) * alpha;
       avatar.group.position.z += (target.z - avatar.group.position.z) * alpha;
@@ -94,7 +110,22 @@ export class RemotePlayers {
       deltaRot = Math.atan2(Math.sin(deltaRot), Math.cos(deltaRot));
       avatar.group.rotation.y += deltaRot * alpha;
 
-      updateAvatar(avatar, performance.now(), entry.alive);
+      // No real velocity data for remote players — inferred from how far
+      // the (already-smoothed) rendered position actually moved this
+      // frame. Good enough for the walk-cycle's purposes, and skipped
+      // entirely while held since a held avatar never walk-cycles anyway
+      // (see avatar.js's priority order) regardless of how fast the
+      // holder carrying them is moving.
+      const moveSpeed = isHeld || dt <= 0
+        ? 0
+        : Math.hypot(avatar.group.position.x - prevX, avatar.group.position.z - prevZ) / dt;
+
+      updateAvatar(avatar, now, dt, {
+        isAlive: entry.alive,
+        isHeld,
+        isHolding: entry.holding !== null,
+        moveSpeed
+      });
     }
   }
 }

@@ -1,6 +1,12 @@
 import * as THREE from 'three';
-import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY, DEATH_SETTLE_Y } from './constants.js';
+import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY, DEATH_SETTLE_Y, SPRINT_MULTIPLIER } from './constants.js';
 import { createAvatar, updateAvatar, triggerPunch, resetAvatarVisuals } from './avatar.js';
+
+// How fast the local player's position eases toward the server-forced
+// "held aloft" target (see setHeldTarget) — much faster than the normal
+// ~8/s collision-correction rate, since a held player has no control of
+// their own and should read as attached to the holder, not laggy.
+const HELD_TRACK_RATE = 20;
 
 // Local player: fully client-simulated movement/gravity/jump for zero input
 // lag. The server only ever validates the *consequences* (boundary,
@@ -23,6 +29,14 @@ export class LocalPlayer {
     // captured and coasted on.
     this.airVelX = 0;
     this.airVelZ = 0;
+
+    // Grab/throw: isHeld means someone else is carrying THIS player (their
+    // position is fully server-driven, see setHeldTarget/update's early
+    // return); holding is the id of whoever THIS player is carrying (or
+    // null) — see setHolding. Both are set from the server's state
+    // broadcast (main.js), the same state-driven pattern `alive` uses.
+    this.isHeld = false;
+    this.holding = null;
 
     this.avatar = createAvatar(name, color);
     scene.add(this.avatar.group);
@@ -47,6 +61,29 @@ export class LocalPlayer {
     this.alive = alive;
   }
 
+  // held: whether someone else is currently carrying this player. Clearing
+  // the stale server-tracking target on release matters: without it, the
+  // last "track the holder" target would otherwise keep tugging the
+  // freshly-freed position toward wherever the holder was a moment ago.
+  setHeld(held) {
+    this.isHeld = held;
+    if (!held) this.serverTarget = null;
+  }
+
+  setHolding(holdingId) {
+    this.holding = holdingId;
+  }
+
+  // Called from onState while held, with the server's authoritative
+  // (holder.x, holder.y + HELD_OFFSET_Y, holder.z). Y is snapped directly
+  // (a holder's height rarely changes fast enough to need easing); X/Z go
+  // through the normal serverTarget mechanism but eased at HELD_TRACK_RATE
+  // instead of the default correction rate — see update()'s isHeld branch.
+  setHeldTarget(x, y, z) {
+    this.serverTarget = { x, z };
+    this.position.y = y;
+  }
+
   // cameraYaw: current mouse-look yaw (radians), used only to resolve WASD
   // into a world-space direction (W = into the view, D = strafe right
   // relative to view, ...). The avatar's own facing is independent of the
@@ -63,7 +100,27 @@ export class LocalPlayer {
   // airVelX/Z and WASD stops being read entirely: no redirecting, no
   // adding more speed, just coasting on real momentum until landing,
   // like an actual physics-driven jump/fall instead of a frozen one.
+  // keys.sprint (Shift on desktop, pushing the joystick past its threshold
+  // on mobile) raises MOVE_SPEED for this frame's normalization only —
+  // whatever speed was active at takeoff is what gets carried into
+  // airVelX/Z automatically, so a sprinting jump keeps sprinting speed
+  // through the air for free.
   update(keys, dt, cameraYaw) {
+    if (this.isHeld) {
+      // Fully server-driven while held: no local physics, no gravity, no
+      // input at all — just track the holder's reported position/height
+      // (see setHeldTarget), eased quickly so it reads as attached rather
+      // than laggy. Mouse look still works (main.js never gates cameraYaw
+      // on isHeld), just WASD/jump/shove/grab don't apply here.
+      this._easeTowardServerTarget(dt, HELD_TRACK_RATE);
+      this.avatar.group.position.copy(this.position);
+      this.avatar.group.rotation.y = this.rotY;
+      updateAvatar(this.avatar, performance.now(), dt, { isAlive: this.alive, isHeld: true });
+      return;
+    }
+
+    let moveSpeed = 0;
+
     if (this.alive) {
       if (this.grounded) {
         const moveForward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
@@ -78,8 +135,9 @@ export class LocalPlayer {
           dx = fx * moveForward + rx * moveRight;
           dz = fz * moveForward + rz * moveRight;
           const len = Math.hypot(dx, dz);
-          dx = (dx / len) * MOVE_SPEED;
-          dz = (dz / len) * MOVE_SPEED;
+          const speed = keys.sprint ? MOVE_SPEED * SPRINT_MULTIPLIER : MOVE_SPEED;
+          dx = (dx / len) * speed;
+          dz = (dz / len) * speed;
 
           this.position.x += dx * dt;
           this.position.z += dz * dt;
@@ -91,9 +149,11 @@ export class LocalPlayer {
         // clamp further down finding you past the platform's edge.
         this.airVelX = dx;
         this.airVelZ = dz;
+        moveSpeed = Math.hypot(dx, dz);
       } else {
         this.position.x += this.airVelX * dt;
         this.position.z += this.airVelZ * dt;
+        moveSpeed = Math.hypot(this.airVelX, this.airVelZ);
       }
 
       if (keys.space && this.grounded) {
@@ -141,7 +201,11 @@ export class LocalPlayer {
 
     this.avatar.group.position.copy(this.position);
     this.avatar.group.rotation.y = this.rotY;
-    updateAvatar(this.avatar, performance.now(), this.alive);
+    updateAvatar(this.avatar, performance.now(), dt, {
+      isAlive: this.alive,
+      isHolding: this.holding !== null,
+      moveSpeed
+    });
   }
 
   respawn(x, z, rotY) {
@@ -153,6 +217,8 @@ export class LocalPlayer {
     this.rotY = rotY;
     this.grounded = true;
     this.alive = true;
+    this.isHeld = false;
+    this.holding = null;
     resetAvatarVisuals(this.avatar);
     // A stale correction from before death (e.g. still converging when
     // eliminated) would otherwise ease the fresh spawn position back
@@ -179,7 +245,11 @@ export class LocalPlayer {
       : null;
   }
 
-  _easeTowardServerTarget(dt) {
+  // rate: convergence speed in 1/s — defaults to the gentle ~8/s used for
+  // ordinary collision corrections; the isHeld path in update() passes
+  // HELD_TRACK_RATE instead for much snappier tracking of a fast-moving
+  // holder.
+  _easeTowardServerTarget(dt, rate = 8) {
     if (!this.serverTarget) return;
     const dx = this.serverTarget.x - this.position.x;
     const dz = this.serverTarget.z - this.position.z;
@@ -188,7 +258,7 @@ export class LocalPlayer {
       this.serverTarget = null;
       return;
     }
-    const alpha = 1 - Math.exp(-8 * dt); // framerate-independent, ~8/s convergence
+    const alpha = 1 - Math.exp(-rate * dt); // framerate-independent convergence
     this.position.x += dx * alpha;
     this.position.z += dz * alpha;
   }

@@ -327,6 +327,16 @@
       0%, 100% { box-shadow: 0 0 6px 2px rgba(102,224,255,0.5); transform: scale(1); }
       50% { box-shadow: 0 0 18px 8px rgba(102,224,255,0.85); transform: scale(1.08); }
     }
+    /* Always tappable (unlike special, grab has no "ready" gate — the
+       server validates range/cooldown and a whiff just silently costs
+       nothing, same as a whiffed shove) — mirrors touchJumpBtn's position
+       across the diagonal from touchSpecialBtn. */
+    #touchGrabBtn {
+      right: max(104px, calc(env(safe-area-inset-right) + 104px));
+      bottom: max(172px, calc(env(safe-area-inset-bottom) + 172px));
+      background: rgba(255,170,0,0.2);
+      border-color: rgba(255,170,0,0.5);
+    }
 
     /* Non-blocking portrait hint. Pure CSS (no JS needed): only shown on
        touch devices (pointer: coarse) that are currently in portrait, and
@@ -357,7 +367,7 @@
       <p>Push everyone out. Last one standing wins.</p>
       <input id="nameInput" type="text" maxlength="16" placeholder="Your name" />
       <button id="playBtn">PLAY</button>
-      <div id="loginHint">WASD/arrows move &middot; SPACE jump &middot; F/click shove (hold to charge) &middot; Q/right-click special</div>
+      <div id="loginHint">WASD/arrows move &middot; SHIFT sprint &middot; SPACE jump &middot; F/click shove (hold to charge) &middot; Q/right-click special &middot; E grab</div>
     </div>
 
     <div id="hud" style="display:none;">
@@ -366,9 +376,11 @@
     </div>
     <div id="controlsHint" style="display:none;">
       WASD / arrows — move<br/>
+      SHIFT — sprint<br/>
       SPACE — jump<br/>
       F / left click — shove (hold to charge)<br/>
       Q / right click — special kick<br/>
+      E — grab &amp; carry (shove to throw)<br/>
       MOUSE — look
     </div>
     <div id="banner"></div>
@@ -391,9 +403,10 @@
       <div id="touchJumpBtn" class="touchBtn">JUMP</div>
       <div id="touchShoveBtn" class="touchBtn">SHOVE</div>
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
+      <div id="touchGrabBtn" class="touchBtn">GRAB</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.19</div>
+    <div id="versionTag">v1.20</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

@@ -28,6 +28,8 @@ export class Network {
     this.socket.on('shoveAction', (data) => handlers.onShoveAction?.(data));
     this.socket.on('shoveHit', (data) => handlers.onShoveHit?.(data));
     this.socket.on('specialProgress', (data) => handlers.onSpecialProgress?.(data));
+    this.socket.on('grabbed', (data) => handlers.onGrabbed?.(data));
+    this.socket.on('released', (data) => handlers.onReleased?.(data));
     this.socket.on('playerEliminated', ({ id }) => handlers.onEliminated?.(id));
     this.socket.on('roundOver', (data) => handlers.onRoundOver?.(data));
     this.socket.on('roundStart', (data) => handlers.onRoundStart?.(data));
@@ -43,5 +45,10 @@ export class Network {
   sendShove(power = 'normal') {
     if (!this.socket?.connected) return;
     this.socket.emit('shove', { power });
+  }
+
+  sendGrab() {
+    if (!this.socket?.connected) return;
+    this.socket.emit('grab');
   }
 }

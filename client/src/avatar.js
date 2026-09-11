@@ -1,15 +1,32 @@
 import * as THREE from 'three';
-import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS } from './constants.js';
+import { PUNCH_ANIM_MS, CHARGED_PUNCH_ANIM_MS, SPECIAL_KICK_ANIM_MS, WALK_CYCLE_HZ_PER_SPEED } from './constants.js';
 
 // Animation profile per shove power tier. 'special' swings both arms back
-// and both legs forward together (a two-legged flying kick), and both
-// tiers above 'normal' pulse an emissive glow on the swinging limbs so the
-// windup/impact reads clearly from a distance, not just up close.
+// and both legs forward together (a two-legged flying kick), and every
+// tier above 'normal' pulses an emissive glow on the swinging limbs so the
+// windup/impact reads clearly from a distance, not just up close. 'throw'
+// (grab-and-throw, see GameRoom#throwHeldPlayer) swings the arms furthest
+// of all — a big two-handed heave — with its own hot color so it reads as
+// distinct from charged's gold and special's cyan.
 const POWER_ANIM = {
   normal:  { duration: PUNCH_ANIM_MS,        armSwing: Math.PI / 2.1, legSwing: 0,            glow: null },
   charged: { duration: CHARGED_PUNCH_ANIM_MS, armSwing: Math.PI / 1.7, legSwing: 0,            glow: 0xffcc33 },
-  special: { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 2.5, legSwing: Math.PI / 2.4, glow: 0x66e0ff }
+  special: { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 2.5, legSwing: Math.PI / 2.4, glow: 0x66e0ff },
+  throw:   { duration: SPECIAL_KICK_ANIM_MS,  armSwing: Math.PI / 1.5, legSwing: 0,            glow: 0xff5522 }
 };
+
+// Walk/run locomotion cycle — see updateAvatar's walk-cycle branch. Legs
+// swing more than arms (a natural gait), and both get a modest extra boost
+// at higher speed on top of the cycle simply running faster, so sprinting
+// reads as bigger strides too and not just a faster metronome.
+const LEG_WALK_AMPLITUDE = Math.PI / 6;
+const ARM_WALK_AMPLITUDE = Math.PI / 9;
+const WALK_MOVING_THRESHOLD = 0.15; // units/sec — below this, treat as standing still
+
+// Sustained pose while holding someone overhead (GameRoom's `holding`) —
+// not a timed animation like POWER_ANIM, just a fixed angle held for as
+// long as isHolding stays true.
+const HOLDING_ARM_ANGLE = -Math.PI * 0.92;
 
 function makeNameSprite(name) {
   const canvas = document.createElement('canvas');
@@ -100,43 +117,106 @@ export function createAvatar(name, colorHex) {
     parts: { torso, head, leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot, nameSprite, armMaterial, legMaterial },
     punchStartTime: -Infinity,
     punchPower: 'normal',
-    fallProgress: 0
+    fallProgress: 0,
+    walkPhase: 0,        // radians; advances with moveSpeed*dt, see updateAvatar's walk-cycle
+    heldTiltProgress: 0  // 0..1, eased toward isHeld — see updateAvatar
   };
 }
 
-// Called once per frame per avatar. Animates the punch/kick swing (shape
-// and glow depend on the shove's power tier, see POWER_ANIM above) and,
-// once eliminated, a topple-and-fade so the player visibly drops out.
-export function updateAvatar(avatar, now, isAlive) {
+// Called once per frame per avatar. `state` bundles everything that
+// decides which pose the limbs take this frame — several pose sources can
+// be "active" at once (e.g. a holder who's also mid-walk-cycle), so the
+// priority order matters and is worth spelling out:
+//   1. A one-shot punch/kick/throw animation (POWER_ANIM) always wins for
+//      the arms, and for the legs only when its own legSwing is nonzero
+//      (only the special kick moves legs) — a shove/throw reads as an
+//      interruption of whatever else the limbs were doing.
+//   2. isHeld (being carried) freezes arms/legs in a relaxed pose and
+//      tilts the whole body toward horizontal — a held player can't be
+//      walking (the server ignores their input entirely), so this always
+//      beats walk-cycle for both arms and legs.
+//   3. isHolding gives the ARMS a sustained overhead pose for as long as
+//      it's true. The LEGS are NOT claimed by this — they still walk-cycle
+//      normally below, since the holder can keep walking while carrying
+//      someone.
+//   4. Walk-cycle drives whichever of arms/legs isn't already claimed by
+//      1-3 above, whenever moveSpeed is above WALK_MOVING_THRESHOLD.
+//   5. Otherwise, idle (rotation reset to neutral).
+// Also handles the once-eliminated topple-and-fade so the player visibly
+// drops out.
+export function updateAvatar(avatar, now, dt, state = {}) {
+  const { isAlive = true, isHeld = false, isHolding = false, moveSpeed = 0 } = state;
   const { leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot, armMaterial, legMaterial } = avatar.parts;
   const cfg = POWER_ANIM[avatar.punchPower] || POWER_ANIM.normal;
   const elapsed = now - avatar.punchStartTime;
+  const punchActive = elapsed >= 0 && elapsed < cfg.duration;
 
-  if (elapsed >= 0 && elapsed < cfg.duration) {
+  // Advances unconditionally (cheap, and keeps the cycle continuous so
+  // resuming movement after a punch/hold doesn't pop to a random phase),
+  // even on frames where something else ends up claiming the limbs.
+  avatar.walkPhase += moveSpeed * dt * WALK_CYCLE_HZ_PER_SPEED * Math.PI * 2;
+
+  let glowIntensity = 0;
+  let glowColor = 0x000000;
+  let legGlow = false;
+
+  if (punchActive) {
     const t = elapsed / cfg.duration;
     const s = Math.sin(t * Math.PI);
-
-    const armSwing = s * cfg.armSwing;
-    leftArmPivot.rotation.x = -armSwing;
-    rightArmPivot.rotation.x = -armSwing;
-
-    const legSwing = s * cfg.legSwing;
-    leftLegPivot.rotation.x = -legSwing;
-    rightLegPivot.rotation.x = -legSwing;
-
-    const glowIntensity = cfg.glow ? s * 0.9 : 0;
-    armMaterial.emissive.setHex(cfg.glow || 0x000000);
-    armMaterial.emissiveIntensity = glowIntensity;
-    legMaterial.emissive.setHex(cfg.glow || 0x000000);
-    legMaterial.emissiveIntensity = cfg.legSwing ? glowIntensity : 0;
+    const armAngle = -s * cfg.armSwing;
+    const legAngle = -s * cfg.legSwing;
+    leftArmPivot.rotation.x = armAngle;
+    rightArmPivot.rotation.x = armAngle;
+    leftLegPivot.rotation.x = legAngle;
+    rightLegPivot.rotation.x = legAngle;
+    glowIntensity = cfg.glow ? s * 0.9 : 0;
+    glowColor = cfg.glow || 0x000000;
+    legGlow = cfg.legSwing > 0;
+  } else if (isHeld) {
+    // Limp/relaxed — arms drooping slightly forward, legs trailing back —
+    // reads as "being carried" rather than standing at attention mid-air.
+    leftArmPivot.rotation.x = -0.3;
+    rightArmPivot.rotation.x = -0.3;
+    leftLegPivot.rotation.x = 0.15;
+    rightLegPivot.rotation.x = 0.15;
   } else {
-    leftArmPivot.rotation.x = 0;
-    rightArmPivot.rotation.x = 0;
-    leftLegPivot.rotation.x = 0;
-    rightLegPivot.rotation.x = 0;
-    armMaterial.emissiveIntensity = 0;
-    legMaterial.emissiveIntensity = 0;
+    const moving = moveSpeed > WALK_MOVING_THRESHOLD;
+    const speedScale = moving ? 1 + Math.min(0.5, moveSpeed / 16) : 1;
+
+    if (isHolding) {
+      leftArmPivot.rotation.x = HOLDING_ARM_ANGLE;
+      rightArmPivot.rotation.x = HOLDING_ARM_ANGLE;
+    } else if (moving) {
+      // Contralateral gait: each arm shares phase with the OPPOSITE leg
+      // (left arm forward with right leg forward, like actually walking).
+      leftArmPivot.rotation.x = Math.sin(avatar.walkPhase + Math.PI) * ARM_WALK_AMPLITUDE * speedScale;
+      rightArmPivot.rotation.x = Math.sin(avatar.walkPhase) * ARM_WALK_AMPLITUDE * speedScale;
+    } else {
+      leftArmPivot.rotation.x = 0;
+      rightArmPivot.rotation.x = 0;
+    }
+
+    if (moving) {
+      leftLegPivot.rotation.x = Math.sin(avatar.walkPhase) * LEG_WALK_AMPLITUDE * speedScale;
+      rightLegPivot.rotation.x = Math.sin(avatar.walkPhase + Math.PI) * LEG_WALK_AMPLITUDE * speedScale;
+    } else {
+      leftLegPivot.rotation.x = 0;
+      rightLegPivot.rotation.x = 0;
+    }
   }
+
+  armMaterial.emissive.setHex(glowColor);
+  armMaterial.emissiveIntensity = glowIntensity;
+  legMaterial.emissive.setHex(glowColor);
+  legMaterial.emissiveIntensity = legGlow ? glowIntensity : 0;
+
+  // Eases toward horizontal while held, back to upright otherwise — a
+  // fixed-step ease (matching fallProgress's own style just below) since
+  // this only ever needs to complete over a handful of frames either way.
+  avatar.heldTiltProgress = isHeld
+    ? Math.min(1, avatar.heldTiltProgress + 0.15)
+    : Math.max(0, avatar.heldTiltProgress - 0.15);
+  avatar.group.rotation.x = -avatar.heldTiltProgress * (Math.PI / 2 - 0.25);
 
   if (!isAlive && avatar.fallProgress < 1) {
     avatar.fallProgress = Math.min(1, avatar.fallProgress + 0.035);
@@ -170,7 +250,9 @@ export function triggerPunch(avatar, now, power = 'normal') {
 // would otherwise never get their opacity restored.
 export function resetAvatarVisuals(avatar) {
   avatar.fallProgress = 0;
+  avatar.heldTiltProgress = 0;
   avatar.group.rotation.z = 0;
+  avatar.group.rotation.x = 0;
   avatar.group.traverse((obj) => {
     if (obj.material) obj.material.opacity = 1;
   });

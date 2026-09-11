@@ -4,7 +4,7 @@
 // already drives every frame in main.js. Nothing here knows about physics,
 // networking, or rendering — it owns DOM/pointer wiring and the two visual
 // indicators (shove charge fill, special-ready glow) only.
-import { JOYSTICK_MAX_RADIUS_PX, JOYSTICK_DEADZONE_PX } from './constants.js';
+import { JOYSTICK_MAX_RADIUS_PX, JOYSTICK_DEADZONE_PX, SPRINT_JOYSTICK_THRESHOLD } from './constants.js';
 
 export function isTouchDevice() {
   return window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -15,7 +15,7 @@ let root = null;
 // Builds the DOM for the touch control zones/buttons and wires up Pointer
 // Event handlers. Safe to call once per page load; main.js decides whether
 // (and when) to call this, gated on isTouchDevice().
-export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecialTrigger, applyLookDelta }) {
+export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecialTrigger, onGrabTrigger, applyLookDelta }) {
   root = document.getElementById('touchControls');
   if (!root) return;
 
@@ -25,9 +25,10 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
   const jumpBtn = document.getElementById('touchJumpBtn');
   const shoveBtn = document.getElementById('touchShoveBtn');
   const specialBtn = document.getElementById('touchSpecialBtn');
+  const grabBtn = document.getElementById('touchGrabBtn');
 
   // Suppress the long-press/right-click context menu on all touch zones.
-  for (const el of [lookLayer, joystickBase, jumpBtn, shoveBtn, specialBtn]) {
+  for (const el of [lookLayer, joystickBase, jumpBtn, shoveBtn, specialBtn, grabBtn]) {
     el?.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
@@ -43,6 +44,7 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
     keys.a = false;
     keys.s = false;
     keys.d = false;
+    keys.sprint = false;
     joystickBase?.classList.remove('active');
     if (joystickKnob) {
       joystickKnob.style.transition = 'transform 0.15s ease-out';
@@ -82,9 +84,9 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
     const centerY = rect.top + rect.height / 2;
     let offsetX = e.clientX - centerX;
     let offsetY = e.clientY - centerY;
-    const len = Math.hypot(offsetX, offsetY);
-    if (len > JOYSTICK_MAX_RADIUS_PX) {
-      const scale = JOYSTICK_MAX_RADIUS_PX / len;
+    const rawLen = Math.hypot(offsetX, offsetY);
+    if (rawLen > JOYSTICK_MAX_RADIUS_PX) {
+      const scale = JOYSTICK_MAX_RADIUS_PX / rawLen;
       offsetX *= scale;
       offsetY *= scale;
     }
@@ -100,6 +102,12 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
     keys.s = offsetY > deadzone;
     keys.a = offsetX < -deadzone;
     keys.d = offsetX > deadzone;
+    // Real-stick "push further to run": based on the RAW pre-clamp
+    // distance, not the visually-clamped knob position, so a finger
+    // pressed hard past the base's edge (which the knob itself can't
+    // visually follow past JOYSTICK_MAX_RADIUS_PX) still registers as a
+    // deliberately harder push.
+    keys.sprint = rawLen > JOYSTICK_MAX_RADIUS_PX * SPRINT_JOYSTICK_THRESHOLD;
   }
 
   // --- Look-drag layer (camera yaw/pitch) ---------------------------------
@@ -157,6 +165,13 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
   specialBtn?.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     onSpecialTrigger();
+  });
+
+  // --- Grab button (single tap; always tappable, server validates range/
+  // cooldown just like a whiffed shove) --------------------------------
+  grabBtn?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    onGrabTrigger();
   });
 }
 

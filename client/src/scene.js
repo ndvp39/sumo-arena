@@ -18,6 +18,12 @@ export class SceneManager {
     this.scene.fog = new THREE.Fog(0x0a0a14, 20, 55);
 
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+    // Widens toward SPRINT_FOV while sprinting (see setSprinting/updateCamera)
+    // for a subtle "speed" cue — a wider FOV reads as faster motion even
+    // though nothing about the actual render distance changes.
+    this._baseFov = 60;
+    this._sprintFov = 68;
+    this._targetFov = this._baseFov;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -492,6 +498,14 @@ export class SceneManager {
     this.arenaGroup.add(sparkles);
   }
 
+  // Sprinting toggles the camera's target FOV; updateCamera eases toward it
+  // every frame rather than snapping, so starting/stopping a sprint doesn't
+  // pop. Only meaningful for the local player, so main.js drives this from
+  // keys.sprint each frame rather than anything server-broadcast.
+  setSprinting(active) {
+    this._targetFov = active ? this._sprintFov : this._baseFov;
+  }
+
   // Mouse-look third-person orbit camera: yaw/pitch come from accumulated
   // mouse movement (see main.js pointer-lock handling), not from the
   // avatar's own rotation, so looking around never fights with movement.
@@ -514,6 +528,12 @@ export class SceneManager {
       this._shakeTime = Math.max(0, this._shakeTime - dt);
       this.camera.position.x += (Math.random() - 0.5) * this._shakeMag;
       this.camera.position.y += (Math.random() - 0.5) * this._shakeMag;
+    }
+
+    if (Math.abs(this.camera.fov - this._targetFov) > 0.02) {
+      const fovAlpha = 1 - Math.pow(0.0005, dt);
+      this.camera.fov += (this._targetFov - this.camera.fov) * fovAlpha;
+      this.camera.updateProjectionMatrix();
     }
 
     this.camera.lookAt(targetPos.x, targetPos.y + 1.2, targetPos.z);
