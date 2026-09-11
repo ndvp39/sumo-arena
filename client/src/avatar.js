@@ -118,8 +118,9 @@ export function createAvatar(name, colorHex) {
     punchStartTime: -Infinity,
     punchPower: 'normal',
     fallProgress: 0,
-    walkPhase: 0,        // radians; advances with moveSpeed*dt, see updateAvatar's walk-cycle
-    heldTiltProgress: 0  // 0..1, eased toward isHeld — see updateAvatar
+    walkPhase: 0,          // radians; advances with moveSpeed*dt, see updateAvatar's walk-cycle
+    heldTiltProgress: 0,   // 0..1, eased toward isHeld — see updateAvatar
+    landSquashProgress: 0  // 0..1, decays to 0 — see triggerLandSquash/updateAvatar
   };
 }
 
@@ -218,6 +219,15 @@ export function updateAvatar(avatar, now, dt, state = {}) {
     : Math.max(0, avatar.heldTiltProgress - 0.15);
   avatar.group.rotation.x = -avatar.heldTiltProgress * (Math.PI / 2 - 0.25);
 
+  // Squash-and-stretch on landing (triggerLandSquash, called from
+  // player.js the instant a fall/jump ends) — a fixed per-frame decay
+  // rather than dt-scaled, matching heldTiltProgress/fallProgress's own
+  // style just above/below, since this only ever needs to resolve over a
+  // handful of frames regardless of framerate.
+  avatar.landSquashProgress = Math.max(0, avatar.landSquashProgress - 0.08);
+  const squash = avatar.landSquashProgress;
+  avatar.group.scale.set(1 + squash * 0.18, 1 - squash * 0.28, 1 + squash * 0.18);
+
   if (!isAlive && avatar.fallProgress < 1) {
     avatar.fallProgress = Math.min(1, avatar.fallProgress + 0.035);
     avatar.group.rotation.z = avatar.fallProgress * (Math.PI / 2);
@@ -242,6 +252,13 @@ export function triggerPunch(avatar, now, power = 'normal') {
   avatar.punchPower = power;
 }
 
+// intensity: 0..1, scaled by how hard the landing was (see player.js) —
+// bigger falls squash more. Called once at the exact moment of landing,
+// not every frame; updateAvatar's own decay handles springing back out of it.
+export function triggerLandSquash(avatar, intensity) {
+  avatar.landSquashProgress = Math.max(avatar.landSquashProgress, Math.min(1, intensity));
+}
+
 // Restores an avatar to fully visible after a respawn. Must be called
 // explicitly by respawn code rather than left to updateAvatar's own
 // "isAlive && fallProgress > 0" reset branch above: respawn code sets
@@ -251,8 +268,10 @@ export function triggerPunch(avatar, now, power = 'normal') {
 export function resetAvatarVisuals(avatar) {
   avatar.fallProgress = 0;
   avatar.heldTiltProgress = 0;
+  avatar.landSquashProgress = 0;
   avatar.group.rotation.z = 0;
   avatar.group.rotation.x = 0;
+  avatar.group.scale.set(1, 1, 1);
   avatar.group.traverse((obj) => {
     if (obj.material) obj.material.opacity = 1;
   });

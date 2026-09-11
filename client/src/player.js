@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { GRAVITY, JUMP_SPEED, MOVE_SPEED, GROUND_Y, KNOCKBACK_DECAY, DEATH_SETTLE_Y, SPRINT_MULTIPLIER } from './constants.js';
-import { createAvatar, updateAvatar, triggerPunch, resetAvatarVisuals } from './avatar.js';
+import { createAvatar, updateAvatar, triggerPunch, triggerLandSquash, resetAvatarVisuals } from './avatar.js';
+
+// Landing speed (units/sec) at/above which a squash starts registering at
+// all — a short hop shouldn't visibly squish, only a real fall/jump.
+const LAND_SQUASH_MIN_SPEED = 3;
+// Landing speed that maps to a full-intensity (1.0) squash — tuned well
+// above LAND_SQUASH_MIN_SPEED so there's real range between "barely
+// noticeable" and "full squash", not a near-binary on/off.
+const LAND_SQUASH_MAX_SPEED = 16;
 
 // How fast the local player's position eases toward the server-forced
 // "held aloft" target (see setHeldTarget) — much faster than the normal
@@ -120,6 +128,11 @@ export class LocalPlayer {
     }
 
     let moveSpeed = 0;
+    // Captured before anything below can change it, so the ground-clamp
+    // further down can tell "still grounded" apart from "just landed" —
+    // triggerLandSquash should only fire on that actual falling->grounded
+    // edge, not on every single grounded frame.
+    const wasGrounded = this.grounded;
 
     if (this.alive) {
       if (this.grounded) {
@@ -181,6 +194,14 @@ export class LocalPlayer {
     const distFromCenter = Math.hypot(this.position.x, this.position.z);
     if (distFromCenter <= this.arenaRadius) {
       if (this.position.y <= GROUND_Y) {
+        // Squash-and-stretch, scaled by how fast the fall actually was —
+        // a small hop barely registers, a real fall squishes hard. Reads
+        // velocityY (still the pre-landing fall speed here) before it
+        // gets reset to 0 on the next line.
+        if (!wasGrounded) {
+          const intensity = (-this.velocityY - LAND_SQUASH_MIN_SPEED) / (LAND_SQUASH_MAX_SPEED - LAND_SQUASH_MIN_SPEED);
+          if (intensity > 0) triggerLandSquash(this.avatar, intensity);
+        }
         this.position.y = GROUND_Y;
         this.velocityY = 0;
         this.grounded = true;

@@ -561,3 +561,57 @@ went from "Land 2 more charged shoves" to a plain `2 / 3` (the pips
 already carry the visual progress — the text only needs to add what to
 press), and banner copy was trimmed throughout ("You've been grabbed! Hope
 for a rescue or brace for a throw..." → "Grabbed! / Brace yourself...").
+
+## 16. Mobile compacting, sound effects, hit-stop, and landing squash
+
+**Mobile UI compacting.** Mobile's own browser chrome (URL bar) already
+claims real vertical space at the top of the viewport on top of whatever
+`100dvh` doesn't reclaim, and the top-anchored HUD/special-meter were
+still using desktop spacing there. `main.js` now adds a `touch-ui` class
+to `<body>` on touch devices, and `body.touch-ui` CSS overrides shrink
+`#hud` (tighter padding, `Map: X · Alive: Y/Z` on one line instead of two)
+and `#specialMeter` (drops the "SPECIAL POWER" title line entirely — the
+pips plus a short hint are already self-explanatory — and shrinks the
+pips/padding/font).
+
+**Sound effects.** The game had zero audio anywhere before this — flagged
+by an earlier ideation pass as the single biggest gap for "feel real."
+`client/src/audio.js` synthesizes everything via the Web Audio API
+(oscillator tones layered with tapered noise bursts for impacts) — no
+sound files, nothing to load or license. `initAudio()` runs from the PLAY
+button's click handler specifically, since starting an `AudioContext`
+requires a real user gesture and that's the first one in the app's
+lifecycle. Shoves/kicks/throws pitch down and grow louder/longer by power
+tier so a bigger hit sounds bigger with no per-tier assets; eliminations,
+grabs, a special-ready chime (fired only on the false→true readiness
+edge, not every progress tick), and round wins each get their own short
+cue.
+
+**Hit-stop.** A brief near-freeze (`HIT_STOP_MS`, scaled by power tier) on
+any landed hit — felt by both the attacker and the target, not just the
+one getting knocked back, matching how fighting games pause the whole
+screen on impact rather than just the two combatants. Implemented as a
+local, purely cosmetic scale-down of `dt` for a few real milliseconds in
+`main.js`'s render loop (`dt *= 0.06`, not literally 0 — keeps easing/decay
+math well-behaved) — nothing about what's sent to or trusted from the
+server changes.
+
+**Landing squash-and-stretch.** `player.js` now captures `wasGrounded`
+each frame and, on the exact falling→grounded edge, reads the pre-reset
+`velocityY` (how fast the fall actually was) to scale a squash intensity
+from 0 (a short hop, barely registers) to 1 (a real fall). `avatar.js`'s
+`triggerLandSquash` sets that as the avatar group's target squash, which
+decays back to neutral over the next several frames — scaling
+`avatar.group.scale` around the group's own origin, which sits at the
+character's feet, so the squash correctly compresses the body toward the
+ground plane instead of sinking the whole avatar into it. Local-player
+only for this pass (same scope as camera shake/hit-stop) — extending it
+to remote players would need inferring fall speed from their
+interpolated position rather than a real physics value, which is more
+fragile than worth it for a cosmetic effect. Verified server-side changes
+(momentum's continued correctness) with a live raw-socket run; the audio/
+hit-stop/squash pieces are client-only and were checked by full re-reads
+of the changed logic plus confirming they occupy independent transform/
+state channels from every existing pose system (rotation.x/y/z, arm/leg
+pivots, materials) rather than by a real browser render, same known
+limitation as the walk-cycle/held-tilt work a couple passes back.

@@ -7,6 +7,7 @@ import {
   TOUCH_LOOK_SENSITIVITY, CHARGE_HOLD_MS, SPECIAL_POWER_THRESHOLD
 } from './constants.js';
 import { isTouchDevice, initTouchControls, showTouchControls, setShoveChargeProgress, setSpecialReady } from './touchControls.js';
+import { initAudio, playShove, playEliminate, playGrab, playSpecialReady, playRoundWin } from './audio.js';
 
 const loginOverlay = document.getElementById('loginOverlay');
 const nameInput = document.getElementById('nameInput');
@@ -53,6 +54,11 @@ function renderHowToPlay() {
     .join('');
 }
 renderHowToPlay();
+// Drives the compact HUD/special-meter CSS overrides (see index.html's
+// `body.touch-ui` rules) — mobile's own browser chrome already eats real
+// vertical space at the top of the viewport, so the top-anchored overlays
+// need to be tighter there than they are on desktop.
+if (isTouchDevice()) document.body.classList.add('touch-ui');
 
 let canvas;
 let sceneManager, localPlayer, remotePlayers, network;
@@ -73,6 +79,16 @@ let chargeStartTime = null;
 let specialReady = false;
 
 const keys = { w: false, a: false, s: false, d: false, space: false, sprint: false };
+
+// Hit-stop: a brief near-freeze on impact (classic fighting-game "juice") —
+// see loop()'s dt-scaling and triggerHitStop below. Bigger hits pause
+// longer, and it fires whether you landed the hit or took it, so both
+// sides of an exchange feel the weight of it.
+const HIT_STOP_MS = { normal: 35, charged: 65, special: 95, throw: 120, drop: 0 };
+let hitStopMs = 0;
+function triggerHitStop(power) {
+  hitStopMs = Math.max(hitStopMs, HIT_STOP_MS[power] ?? 35);
+}
 
 // Last-resort, page-wide zoom guards. CSS touch-action and the per-control
 // preventDefault() calls in touchControls.js should already stop zoom, but
@@ -150,6 +166,10 @@ function updateChargeUI(progress) {
 // text (device-aware — "press Q" vs "tap"), and the ready-state glow. Also
 // flips the mobile special button between dim/inert and glowing/tappable.
 function updateSpecialUI(count, threshold, ready) {
+  // Only on the false->true edge — every specialProgress event while
+  // already ready would otherwise replay the chime on every subsequent
+  // charged hit landed before it's actually used.
+  if (ready && !specialReady) playSpecialReady();
   specialReady = ready;
   specialPipEls.forEach((pip, i) => pip.classList.toggle('filled', i < count));
   specialMeterEl?.classList.toggle('ready', ready);
@@ -275,6 +295,7 @@ function startGame(name) {
       }
     },
     onShoveAction: ({ playerId, power }) => {
+      playShove(power);
       if (playerId === selfId) localPlayer?.playPunch(power);
       else remotePlayers.playPunch(playerId, power);
 
@@ -299,9 +320,15 @@ function startGame(name) {
         // 'drop' (an un-thrown release, see GameRoom#dropHeld) is
         // deliberately gentle — no shake, it's an "oops" not a hit.
       }
+      // Both sides of a landed hit feel the impact pause — whether you
+      // took it or dealt it — but not a drop, which isn't really a "hit".
+      if (data.targetId === selfId || data.sourceId === selfId) {
+        triggerHitStop(data.power);
+      }
     },
     onSpecialProgress: ({ count, threshold, ready }) => updateSpecialUI(count, threshold, ready),
     onGrabbed: ({ holderId, targetId }) => {
+      playGrab();
       if (targetId === selfId) {
         showBanner('Grabbed!', 'Brace yourself...');
       } else if (holderId === selfId) {
@@ -323,6 +350,7 @@ function startGame(name) {
       // clearing the "You've been grabbed!" banner and local flag state.
     },
     onEliminated: (id) => {
+      playEliminate();
       if (id === selfId) {
         sceneManager.spawnDeathEffect(localPlayer.avatar.group.position, selfColor);
         localPlayer.setAlive(false);
@@ -334,6 +362,7 @@ function startGame(name) {
     },
     onRoundOver: (data) => {
       controlsEnabled = false;
+      playRoundWin();
       const titleText = data.winnerId === selfId
         ? 'You win!'
         : data.winnerName ? `${data.winnerName} wins!` : 'Round over';
@@ -535,8 +564,18 @@ const sendInterval = 1 / NETWORK_SEND_HZ;
 
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  let dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
+
+  // Hit-stop: scale dt way down (not literally to 0 — keeps downstream
+  // math like easing/decay well-behaved) for a few real milliseconds after
+  // a landed hit, so physics/animation nearly freeze for a beat. Purely a
+  // local, cosmetic time-dilation — nothing here touches what gets sent to
+  // or trusted from the server.
+  if (hitStopMs > 0) {
+    hitStopMs -= dt * 1000;
+    dt *= 0.06;
+  }
 
   if (localPlayer) {
     localPlayer.update(controlsEnabled ? keys : { w: false, a: false, s: false, d: false, space: false, sprint: false }, dt, cameraYaw);
@@ -615,6 +654,10 @@ function requestFullscreenSafe() {
 
 playBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
+  // Must happen inside this click handler specifically — AudioContext
+  // requires a real user gesture to start, and this is the first one in
+  // the whole app's lifecycle.
+  initAudio();
   if (isTouchDevice()) requestFullscreenSafe();
   startGame(name);
 });
