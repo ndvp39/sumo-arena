@@ -7,7 +7,7 @@ export const GROUND_Y = 0;
 
 export const GRAVITY = 20;
 export const JUMP_SPEED = 8;
-export const MOVE_SPEED = 5;
+export const MOVE_SPEED = 6;
 
 // Just above the server's ELIMINATION_Y (-14, see server/constants.js) so a
 // falling player visually plunges into the themed liquid surface (see
@@ -46,7 +46,7 @@ export const PITCH_MAX = 1.3;   // radians; how far it can rise toward top-down
 // point for feel-tuning, not derived from anything precise.
 export const TOUCH_LOOK_SENSITIVITY = 0.006;
 export const JOYSTICK_MAX_RADIUS_PX = 50;
-export const JOYSTICK_DEADZONE_PX = 8;
+export const JOYSTICK_DEADZONE_PX = 5;
 
 export const SERVER_URL =
   import.meta.env.VITE_SERVER_URL ||

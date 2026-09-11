@@ -34,12 +34,20 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
   // --- Virtual joystick (movement) ---------------------------------------
   let joystickPointerId = null;
 
+  // Knob movement is instant (transition:none) while actively dragging —
+  // any smoothing there would read as input lag — and only gets a brief
+  // eased transition for the snap-back on release, so letting go feels
+  // fluid instead of an abrupt jump to center.
   function resetJoystick() {
     keys.w = false;
     keys.a = false;
     keys.s = false;
     keys.d = false;
-    if (joystickKnob) joystickKnob.style.transform = 'translate(-50%, -50%)';
+    joystickBase?.classList.remove('active');
+    if (joystickKnob) {
+      joystickKnob.style.transition = 'transform 0.15s ease-out';
+      joystickKnob.style.transform = 'translate(-50%, -50%)';
+    }
   }
 
   joystickBase?.addEventListener('pointerdown', (e) => {
@@ -52,6 +60,8 @@ export function initTouchControls({ keys, onShovePress, onShoveRelease, onSpecia
     if (joystickPointerId !== null) return;
     joystickPointerId = e.pointerId;
     joystickBase.setPointerCapture(e.pointerId);
+    joystickBase.classList.add('active');
+    if (joystickKnob) joystickKnob.style.transition = 'none';
     updateJoystick(e);
   });
   joystickBase?.addEventListener('pointermove', (e) => {

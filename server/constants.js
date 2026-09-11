@@ -14,7 +14,7 @@ export const ELIMINATION_Y = -14;
 
 export const GRAVITY = 20;
 export const JUMP_SPEED = 8;
-export const MOVE_SPEED = 5;
+export const MOVE_SPEED = 6;
 
 // Arm length, mirrored from client/src/avatar.js's arm geometry
 // (BoxGeometry(0.18, 0.6, 0.18) swung ~horizontal) — this is how far a hand

@@ -47,28 +47,33 @@ export class LocalPlayer {
   // camera — it turns to face wherever it's actually moving, like a
   // standard third-person controller (camera and character rotation are
   // decoupled; only the camera responds to the mouse). Independent per-key
-  // state (not mutually exclusive) means diagonals (W+D, ...) and
-  // jumping/shoving while moving all just work — nothing here gates one
-  // input on another.
+  // state (not mutually exclusive) means jumping/shoving while moving all
+  // just work — nothing here gates one input on another, except WASD
+  // itself is only read while grounded: no air control once airborne, and
+  // no momentum carries over either since this sets position directly
+  // rather than accumulating a velocity — a jump commits you to whatever
+  // arc gravity gives you.
   update(keys, dt, cameraYaw) {
     if (this.alive) {
-      const moveForward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-      const moveRight = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-      const hasInput = moveForward !== 0 || moveRight !== 0;
+      if (this.grounded) {
+        const moveForward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        const moveRight = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+        const hasInput = moveForward !== 0 || moveRight !== 0;
 
-      if (hasInput) {
-        const fx = Math.sin(cameraYaw), fz = Math.cos(cameraYaw);
-        const rx = -Math.cos(cameraYaw), rz = Math.sin(cameraYaw);
+        if (hasInput) {
+          const fx = Math.sin(cameraYaw), fz = Math.cos(cameraYaw);
+          const rx = -Math.cos(cameraYaw), rz = Math.sin(cameraYaw);
 
-        let dx = fx * moveForward + rx * moveRight;
-        let dz = fz * moveForward + rz * moveRight;
-        const len = Math.hypot(dx, dz);
-        dx = (dx / len) * MOVE_SPEED;
-        dz = (dz / len) * MOVE_SPEED;
+          let dx = fx * moveForward + rx * moveRight;
+          let dz = fz * moveForward + rz * moveRight;
+          const len = Math.hypot(dx, dz);
+          dx = (dx / len) * MOVE_SPEED;
+          dz = (dz / len) * MOVE_SPEED;
 
-        this.position.x += dx * dt;
-        this.position.z += dz * dt;
-        this.rotY = Math.atan2(dx, dz);
+          this.position.x += dx * dt;
+          this.position.z += dz * dt;
+          this.rotY = Math.atan2(dx, dz);
+        }
       }
 
       if (keys.space && this.grounded) {

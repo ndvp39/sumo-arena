@@ -244,23 +244,36 @@
       border-radius: 50%;
       background: rgba(255,255,255,0.12);
       border: 2px solid rgba(255,255,255,0.25);
+      transition: background 0.15s ease-out, border-color 0.15s ease-out;
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
     }
+    /* Centered purely via left:50%/top:50% + translate(-50%,-50%) — do NOT
+       also add margin-left/-top here, that was stacking with the transform
+       and pushing the knob up-left of true center at rest. touchControls.js
+       drives this same transform dynamically while dragging (offset added
+       to the -50%/-50% baseline) and swaps in a short transition only on
+       release, for a smooth snap-back instead of an instant jump. */
     #touchJoystickKnob {
       position: absolute;
       left: 50%; top: 50%;
       width: 56px;
       height: 56px;
-      margin-left: -28px;
-      margin-top: -28px;
       border-radius: 50%;
       background: rgba(255,255,255,0.35);
       border: 2px solid rgba(255,255,255,0.5);
       transform: translate(-50%, -50%);
       pointer-events: none;
+      transition: background 0.15s ease-out;
+    }
+    #touchJoystickBase.active #touchJoystickKnob {
+      background: rgba(255,255,255,0.55);
+    }
+    #touchJoystickBase.active {
+      border-color: rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.16);
     }
     .touchBtn {
       position: absolute;
@@ -380,7 +393,7 @@
       <div id="touchSpecialBtn" class="touchBtn">⚡KICK</div>
     </div>
     <div id="rotateHint">Rotate your device for a better view</div>
-    <div id="versionTag">v1.17</div>
+    <div id="versionTag">v1.18</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>
